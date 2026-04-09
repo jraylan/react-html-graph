@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "noEmit": false
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/style.css",
+    "src/**/*.tsx",
+    "src/global.d.ts",
+    "src/module.ts"
+  ],
+  "exclude": [
+    "src/index.tsx",
+    "src/App.tsx",
+    "src/reportWebVitals.ts",
+    "src/setupTests.ts",
+    "src/**/*-teste.tsx"
+  ]
+}

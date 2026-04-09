@@ -1,0 +1,78 @@
+graph-root {
+    display: block;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    color: #fff;
+    overflow: hidden;
+
+    graph-viewbox {
+        display: block;
+        position: relative;
+        min-width: 100%;
+        min-height: 100%;
+        transform-origin: 0 0;
+        overflow: visible;
+
+        node-graph-object {
+            position: absolute;
+            width: fit-content;
+            height: fit-content;
+            display: flex;
+            align-items: center;
+        }
+    }
+}
+
+
+
+@keyframes graph-link-flow {
+    from {
+        stroke-dashoffset: 0;
+    }
+
+    to {
+        stroke-dashoffset: var(--cycle-len);
+    }
+}
+
+node-graph-link,
+node-graph-node {
+    position: absolute;
+    pointer-events: all;
+}
+
+node-graph-temp-link {
+    position: absolute;
+
+    >svg {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0;
+        height: 0;
+        overflow: visible;
+        pointer-events: none;
+    }
+}
+
+node-graph-link>svg {
+    position: absolute;
+    pointer-events: none;
+    overflow: visible;
+}
+
+node-graph-link>svg path {
+    animation-name: graph-link-flow;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+    transition: stroke 0.3s ease, stroke-width 0.15s ease;
+}
+
+node-graph-link>svg text {
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: font-size 0.15s ease;
+}
