@@ -20,6 +20,7 @@
     "src/App.tsx",
     "src/reportWebVitals.ts",
     "src/setupTests.ts",
-    "src/**/*-teste.tsx"
+    "src/**/*-teste.tsx",
+    "src/example/"
   ]
 }
