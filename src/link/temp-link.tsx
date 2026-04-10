@@ -40,13 +40,14 @@ export default function TempLink() {
             return;
         }
 
-        const el = graphRoot.current?.querySelector(
+        const graph = graphRoot.current;
+        if (!graph) return;
+
+        const el = graph.querySelector(
             `node-graph-object[node-id="${dragState.sourceNodeId}"] node-graph-port[port-id="${dragState.sourcePortName}"]`
         );
         if (!el) return;
 
-        const graph = graphRoot.current;
-        if (!graph) return;
 
         const graphRect = graph.getBoundingClientRect();
         const portRect = el.getBoundingClientRect();

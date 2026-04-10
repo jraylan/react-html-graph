@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import useViewbox from "../hooks/viewbox";
 import useGraphError from "../hooks/error";
 import useGraphRoot from "../hooks/graph-root";
@@ -33,7 +33,7 @@ type GraphLinkProps = {
  * @param props Propriedades do link (GraphLinkProps)
  * @returns JSX.Element
  */
-export default function GraphLink({
+const MemoizedGraphLink = memo(function GraphLink({
     id,
     from,
     to,
@@ -221,7 +221,7 @@ export default function GraphLink({
     useEffect(() => {
         if (!fromNode || !toNode || invalid) return;
         readPositions();
-    }, [viewbox, fromNode, toNode, invalid, readPositions]);
+    }, [viewbox.zoom, fromNode, toNode, invalid, readPositions]);
 
     // Limpa rAF ao desmontar
     useEffect(() => {
@@ -248,6 +248,11 @@ export default function GraphLink({
                 strokeWidth={fwdStroke}
                 strokeLinecap="round"
                 strokeDasharray={dashPattern}
+                style={{
+                    animationDuration: forwardDuration > 0 ? forwardDuration + "s" : "0s",
+                    animationDirection: "reverse",
+                    ["--cycle-len" as string]: cycleLen + "px",
+                }}
             />
             <path
                 ref={reverseRef}
@@ -294,4 +299,6 @@ export default function GraphLink({
             )}
         </svg>
     </node-graph-link>);
-}
+})
+
+export default MemoizedGraphLink;

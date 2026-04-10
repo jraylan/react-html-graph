@@ -1,8 +1,8 @@
-import { useRef, useState, useCallback, useEffect, useMemo } from "react";
-import useViewbox from "../hooks/viewbox";
+import { useRef, useState, useCallback, useEffect, useMemo, memo } from "react";
 import useGraphMode from "../hooks/graph-mode";
 import { GraphObjectProps, Point3D, PortsByLocation } from "../types";
 import GraphPort from "../ports/base";
+import useGetZoom from "../hooks/get-zoom";
 
 type MoveState = {
     moving: boolean,
@@ -20,11 +20,10 @@ type MoveState = {
  * @param props GraphObjectProps
  * @returns JSX.Element
  */
-export default function GraphObject({ children, id, ports, data, initialPosition, onMove }: GraphObjectProps) {
+const MemoizedGraphObject = memo(function GraphObject({ children, id, ports, data, initialPosition, onMove }: GraphObjectProps) {
     const ref = useRef<HTMLDivElement>(null)
-    const viewbox = useViewbox();
+    const getZoom = useGetZoom();
     const mode = useGraphMode();
-    const zoom = useRef<number>(viewbox.zoom);
     const [position, setPosition] = useState<Point3D>(() => initialPosition ?? { x: 0, y: 0, z: 0 });
     const moveRef = useRef<MoveState>({
         moving: false,
@@ -56,8 +55,9 @@ export default function GraphObject({ children, id, ports, data, initialPosition
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!ref.current || !moveRef.current.moving) return;
-        const dx = (e.clientX - moveRef.current.movePointStart.x) / zoom.current;
-        const dy = (e.clientY - moveRef.current.movePointStart.y) / zoom.current;
+        const zoom = getZoom();
+        const dx = (e.clientX - moveRef.current.movePointStart.x) / zoom;
+        const dy = (e.clientY - moveRef.current.movePointStart.y) / zoom;
         const newX = moveRef.current.startPos.x + dx;
         const newY = moveRef.current.startPos.y + dy;
         moveRef.current.currentPos.x = newX;
@@ -65,7 +65,7 @@ export default function GraphObject({ children, id, ports, data, initialPosition
         ref.current.style.left = `${newX.toFixed(0)}px`;
         ref.current.style.top = `${newY.toFixed(0)}px`;
 
-    }, [])
+    }, [getZoom])
 
 
     useEffect(() => {
@@ -75,9 +75,6 @@ export default function GraphObject({ children, id, ports, data, initialPosition
         ref.current.style.zIndex = position.z.toFixed(0);
     }, [position])
 
-    useEffect(() => {
-        zoom.current = viewbox.zoom
-    }, [viewbox.zoom])
 
     useEffect(() => {
         if (mode === "readonly") return;
@@ -159,4 +156,6 @@ export default function GraphObject({ children, id, ports, data, initialPosition
     >
         {children({ id, ports: portsByLocation, data })}
     </node-graph-object>
-}
+})
+
+export default MemoizedGraphObject;
