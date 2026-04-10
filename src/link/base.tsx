@@ -74,6 +74,7 @@ const MemoizedGraphLink = memo(function GraphLink({
     const gapRef = useRef(gap);
     const labelsRef = useRef(labels);
     const invalidRef = useRef(invalid);
+
     gapRef.current = gap;
     labelsRef.current = labels;
     invalidRef.current = invalid;
@@ -142,8 +143,8 @@ const MemoizedGraphLink = memo(function GraphLink({
             root.style.top = bounds.top + "px";
             root.style.width = bounds.width + "px";
             root.style.height = bounds.height + "px";
-            root.setAttribute("viewBox", `${bounds.left} ${bounds.top} ${bounds.width} ${bounds.height}`);
 
+            root.setAttribute("viewBox", `${bounds.left} ${bounds.top} ${bounds.width} ${bounds.height}`);
             fwd.setAttribute("d", forwardD);
             rev.setAttribute("d", reverseD);
 
@@ -165,16 +166,60 @@ const MemoizedGraphLink = memo(function GraphLink({
         });
     }, []);
 
-    // Determina direcao de saida da porta baseado na posicao relativa ao centro do no
-    const detectPortDir = useCallback(
-        (node: HTMLElement, port: HTMLElement | null): PortDirection => {
-            if (!port) return "right";
-            const relX = port.offsetLeft + port.offsetWidth / 2 - node.offsetWidth / 2;
-            const relY = port.offsetTop + port.offsetHeight / 2 - node.offsetHeight / 2;
-            if (Math.abs(relX) >= Math.abs(relY)) {
-                return relX >= 0 ? "right" : "left";
+    // Acumula offsets do elemento até o ancestral de referência
+    const accumulateOffset = useCallback(
+        (el: HTMLElement, ancestor: HTMLElement): { x: number; y: number } => {
+            let x = 0;
+            let y = 0;
+            let current: HTMLElement | null = el;
+            while (current && current !== ancestor) {
+                x += current.offsetLeft;
+                y += current.offsetTop;
+                current = current.offsetParent as HTMLElement | null;
             }
-            return relY >= 0 ? "bottom" : "top";
+            return { x, y };
+        },
+        []
+    );
+
+    // Determina a direcao da porta pela posicao real dentro do no.
+    // Quando a porta estiver centralizada, usa o vetor entre origem e destino
+    // como heuristica para escolher um lado mais natural.
+    const detectPortDir = useCallback(
+        (
+            node: HTMLElement,
+            portOrigin: { x: number; y: number } | null,
+            delta: { x: number; y: number },
+            invertDelta = false,
+        ): PortDirection => {
+            const normalizedDelta = invertDelta
+                ? { x: -delta.x, y: -delta.y }
+                : delta;
+
+            if (!portOrigin) {
+                if (Math.abs(normalizedDelta.x) >= Math.abs(normalizedDelta.y)) {
+                    return normalizedDelta.x >= 0 ? "right" : "left";
+                }
+                return normalizedDelta.y >= 0 ? "bottom" : "top";
+            }
+
+            const relX = portOrigin.x - node.offsetWidth / 2;
+            const relY = portOrigin.y - node.offsetHeight / 2;
+            const toleranceX = Math.max(4, node.offsetWidth * 0.05);
+            const toleranceY = Math.max(4, node.offsetHeight * 0.05);
+            const isCentered = Math.abs(relX) <= toleranceX && Math.abs(relY) <= toleranceY;
+
+            if (!isCentered) {
+                if (Math.abs(relX) >= Math.abs(relY)) {
+                    return relX >= 0 ? "right" : "left";
+                }
+                return relY >= 0 ? "bottom" : "top";
+            }
+
+            if (Math.abs(normalizedDelta.x) >= Math.abs(normalizedDelta.y)) {
+                return normalizedDelta.x >= 0 ? "right" : "left";
+            }
+            return normalizedDelta.y >= 0 ? "bottom" : "top";
         },
         []
     );
@@ -184,20 +229,44 @@ const MemoizedGraphLink = memo(function GraphLink({
         if (!fromNode || !toNode) return;
         const fromPort = fromNode.querySelector<HTMLElement>('node-graph-port[port-id="' + from.port + '"]');
         const toPort = toNode.querySelector<HTMLElement>('node-graph-port[port-id="' + to.port + '"]');
+
+        const fromOffset = fromPort
+            ? accumulateOffset(fromPort, fromNode)
+            : { x: fromNode.offsetWidth / 2, y: fromNode.offsetHeight / 2 };
+        const toOffset = toPort
+            ? accumulateOffset(toPort, toNode)
+            : { x: toNode.offsetWidth / 2, y: toNode.offsetHeight / 2 };
+
+        const fromPortOrigin = fromPort
+            ? {
+                x: fromOffset.x + fromPort.offsetWidth / 2,
+                y: fromOffset.y + fromPort.offsetHeight / 2,
+            } : null;
+        const toPortOrigin = toPort
+            ? {
+                x: toOffset.x + toPort.offsetWidth / 2,
+                y: toOffset.y + toPort.offsetHeight / 2,
+            } : null;
+
+        const fromX = fromNode.offsetLeft + (fromPortOrigin?.x ?? fromOffset.x);
+        const fromY = fromNode.offsetTop + (fromPortOrigin?.y ?? fromOffset.y);
+        const toX = toNode.offsetLeft + (toPortOrigin?.x ?? toOffset.x);
+        const toY = toNode.offsetTop + (toPortOrigin?.y ?? toOffset.y);
+        const delta = { x: toX - fromX, y: toY - fromY };
+
         positionsRef.current = {
-            fromX: fromNode.offsetLeft + (fromPort ? fromPort.offsetLeft + fromPort.offsetWidth / 2 : fromNode.offsetWidth),
-            fromY: fromNode.offsetTop + (fromPort ? fromPort.offsetTop + fromPort.offsetHeight / 2 : fromNode.offsetHeight / 2),
-            toX: toNode.offsetLeft + (toPort ? toPort.offsetLeft + toPort.offsetWidth / 2 : 0),
-            toY: toNode.offsetTop + (toPort ? toPort.offsetTop + toPort.offsetHeight / 2 : toNode.offsetHeight / 2),
-            fromDir: detectPortDir(fromNode, fromPort),
-            toDir: detectPortDir(toNode, toPort),
+            fromX, fromY,
+            toX, toY,
+            fromDir: detectPortDir(fromNode, fromPortOrigin, delta),
+            toDir: detectPortDir(toNode, toPortOrigin, delta, true),
         };
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = requestAnimationFrame(runCalculation);
-    }, [fromNode, toNode, from.port, to.port, detectPortDir, runCalculation]);
+    }, [fromNode, toNode, from.port, to.port, accumulateOffset, detectPortDir, runCalculation]);
 
-    // Observe node changes
+    // Observar mudanças nos nós (posição, tamanho, existência) e recalcular
     useEffect(() => {
+
         if (!fromNode || !toNode || invalid) return;
         readPositions();
 
@@ -223,7 +292,7 @@ const MemoizedGraphLink = memo(function GraphLink({
         readPositions();
     }, [viewbox.zoom, fromNode, toNode, invalid, readPositions]);
 
-    // Limpa rAF ao desmontar
+    // Limpa animation frame ao desmontar
     useEffect(() => {
         return () => cancelAnimationFrame(rafIdRef.current);
     }, []);

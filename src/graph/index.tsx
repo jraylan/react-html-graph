@@ -38,9 +38,18 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
     const graphApiRef = useRef<GraphApi>(null);
     const [nodeDefs, setNodeDefs] = useState<NodeDefinition[]>([]);
     const [linkDefs, setLinkDefs] = useState<LinkDefinition[]>([]);
-    const [viewbox, setViewBox] = useState<Viewbox>({
+    const [viewbox, setViewBoxState] = useState<Viewbox>({
         x: 0, y: 0, zoom: 1, width: 0, height: 0,
     })
+    const viewboxRef = useRef<Viewbox>(viewbox)
+
+    // Wrapper que mantém ref e state sempre sincronizados.
+    // A ref é a fonte de verdade; updaters leem dela (não do state batched).
+    const setViewBox = useCallback((updater: Viewbox | ((prev: Viewbox) => Viewbox)) => {
+        const newVb = typeof updater === 'function' ? updater(viewboxRef.current) : updater;
+        viewboxRef.current = newVb;
+        setViewBoxState(newVb);
+    }, []);
 
     // Converte definicoes em React elements para GraphContext
     const nodes = useMemo(() =>
@@ -84,8 +93,10 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
         if (panRef.current.panning && rootRef.current && e.button === 1) {
             panRef.current.panning = false
             rootRef.current.style.userSelect = ""
+            // Commita a posição acumulada no ref para o React state
+            setViewBox(viewboxRef.current);
         }
-    }, []);
+    }, [setViewBox]);
 
     const handleWheel = useCallback((e: WheelEvent) => {
         e.preventDefault();
@@ -112,17 +123,21 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
 
             return { ...vb, x, y, zoom: newZoom }
         })
-    }, [])
+    }, [setViewBox])
 
     const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         if (!panRef.current.panning) return;
-        setViewBox(vb => {
-            return {
-                ...vb,
-                x: vb.x - e.movementX / vb.zoom,
-                y: vb.y - e.movementY / vb.zoom,
-            }
-        })
+        const vb = viewboxRef.current;
+        const newX = vb.x - e.movementX / vb.zoom;
+        const newY = vb.y - e.movementY / vb.zoom;
+        viewboxRef.current = { ...vb, x: newX, y: newY };
+
+        // Atualiza o DOM diretamente sem causar re-render
+        const viewboxEl = rootRef.current?.querySelector('graph-viewbox') as HTMLElement | null;
+        if (viewboxEl) {
+            viewboxEl.style.transform = `scale(${vb.zoom}) translate(${-newX}px, ${-newY}px)`;
+            viewboxEl.style.transformOrigin = '0 0';
+        }
     }, []);
 
 
@@ -151,7 +166,7 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
             observer.disconnect();
         }
 
-    }, [handleWheel])
+    }, [handleWheel, setViewBox])
 
 
     // Valida IDs duplicados entre nós e links

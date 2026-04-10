@@ -1,6 +1,6 @@
 import { useContext, useState, useEffect } from "react";
 import { ConnectionContext } from "../context/connection-context";
-import useViewbox from "../hooks/viewbox";
+import useGetViewbox from "../hooks/get-viewbox";
 import useGraphRoot from "../hooks/graph-root";
 
 /**
@@ -12,7 +12,7 @@ import useGraphRoot from "../hooks/graph-root";
  */
 export default function TempLink() {
     const { dragState } = useContext(ConnectionContext);
-    const viewbox = useViewbox();
+    const getViewbox = useGetViewbox();
     const graphRoot = useGraphRoot();
     const [cursor, setCursor] = useState({ x: 0, y: 0 });
     const [sourcePos, setSourcePos] = useState<{ x: number; y: number } | null>(null);
@@ -24,6 +24,7 @@ export default function TempLink() {
             const graph = graphRoot.current;
             if (!graph) return;
             const rect = graph.getBoundingClientRect();
+            const viewbox = getViewbox();
             setCursor({
                 x: (e.clientX - rect.left) / viewbox.zoom + viewbox.x,
                 y: (e.clientY - rect.top) / viewbox.zoom + viewbox.y,
@@ -32,7 +33,7 @@ export default function TempLink() {
 
         document.addEventListener('mousemove', handleMouseMove);
         return () => document.removeEventListener('mousemove', handleMouseMove);
-    }, [dragState.active, viewbox.zoom, viewbox.x, viewbox.y, graphRoot]);
+    }, [dragState.active, getViewbox, graphRoot]);
 
     useEffect(() => {
         if (!dragState.active) {
@@ -51,12 +52,13 @@ export default function TempLink() {
 
         const graphRect = graph.getBoundingClientRect();
         const portRect = el.getBoundingClientRect();
+        const viewbox = getViewbox();
 
         setSourcePos({
             x: (portRect.left + portRect.width / 2 - graphRect.left) / viewbox.zoom + viewbox.x,
             y: (portRect.top + portRect.height / 2 - graphRect.top) / viewbox.zoom + viewbox.y,
         });
-    }, [dragState, viewbox.zoom, viewbox.x, viewbox.y, graphRoot]);
+    }, [dragState, getViewbox, graphRoot]);
 
     if (!dragState.active || !sourcePos) return null;
 

@@ -3,6 +3,7 @@ import { ConnectionContext } from "../context/connection-context";
 import { GraphContext } from "../context/graph-context";
 import { ConnectionType } from "../types";
 import useGraphRoot from "./graph-root";
+import useGetViewbox from "./get-viewbox";
 
 /**
  * Hook que expõe o estado de conexões e operações básicas (connect/disconnect)
@@ -63,8 +64,9 @@ export function usePortDrag(nodeId: string, portName: string, connectionType: Co
  */
 export function usePortDrop(nodeId: string, portName: string, connectionType: ConnectionType) {
     const { dragState, endDrag } = useContext(ConnectionContext);
-    const { mode, viewbox } = useContext(GraphContext);
+    const { mode } = useContext(GraphContext);
     const graphRoot = useGraphRoot();
+    const getViewbox = useGetViewbox();
 
     const canDrop =
         dragState.active &&
@@ -80,6 +82,7 @@ export function usePortDrop(nodeId: string, portName: string, connectionType: Co
             let cursorPos = { x: 0, y: 0 };
             if (graph) {
                 const rect = graph.getBoundingClientRect();
+                const viewbox = getViewbox();
                 cursorPos = {
                     x: (e.clientX - rect.left) / viewbox.zoom + viewbox.x,
                     y: (e.clientY - rect.top) / viewbox.zoom + viewbox.y,
@@ -88,7 +91,7 @@ export function usePortDrop(nodeId: string, portName: string, connectionType: Co
 
             endDrag(nodeId, portName, cursorPos);
         },
-        [mode, dragState.active, nodeId, portName, endDrag, viewbox, graphRoot]
+        [mode, dragState.active, nodeId, portName, endDrag, getViewbox, graphRoot]
     );
 
     return {
