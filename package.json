@@ -8,6 +8,10 @@
   "files": [
     "dist"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jraylan/react-html-graph"
+  },
   "sideEffects": [
     "**/*.css"
   ],
