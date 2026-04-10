@@ -81,6 +81,14 @@ export interface GraphApi {
     connect(connection: PortConnection): void;
     disconnect(connection: PortConnection): void;
     getConnections(): PortConnection[];
+    /** Retorna o estado runtime atual reportado pelos nós. */
+    getNodeStates(): GraphNodeRuntimeState[];
+    /** Retorna o estado runtime atual reportado pelos links. */
+    getLinkStates(): GraphLinkRuntimeState[];
+    /** Centraliza a viewport para enquadrar todos os nós visíveis. */
+    centralize(options?: GraphCentralizeOptions): Promise<Viewbox>;
+    /** Aplica um algoritmo de layout aos nós do grafo. */
+    applyLayout(input: GraphApplyLayoutInput): Promise<GraphLayoutResult>;
 }
 
 /** Estado do viewbox — posição e escala do canvas. */
@@ -105,6 +113,16 @@ export interface GraphInfo {
     direction: "input" | "output" | "bidirectional";
 }
 
+/** Opções para centralizar a viewport no conteúdo atual do grafo. */
+export interface GraphCentralizeOptions {
+    /** Espaçamento mínimo em pixels entre o conteúdo e a borda visível. */
+    padding?: number;
+    /** Zoom mínimo permitido ao enquadrar o conteúdo. */
+    minZoom?: number;
+    /** Zoom máximo permitido ao enquadrar o conteúdo. */
+    maxZoom?: number;
+}
+
 /** Representa um erro interno do grafo. */
 export interface GraphError {
     /** Código identificador do erro. */
@@ -126,13 +144,148 @@ export type GraphProps = {
     ref?: React.Ref<GraphApi>;
 }
 
+/** Entrada pública para aplicar um layout aos nós existentes do grafo. */
+export interface GraphApplyLayoutInput {
+    /** Nome do algoritmo de layout a executar. */
+    algorithm: GraphLayoutAlgorithm;
+    /** Opções compartilhadas entre os algoritmos disponíveis. */
+    options?: GraphLayoutOptions;
+}
+
 /** Modo do grafo (controle de edição vs somente leitura). */
 export type GraphMode = "readonly" | "edit";
+
+/** Nome de um algoritmo de layout suportado pelo grafo. */
+export type GraphLayoutAlgorithm =
+    | "force-direction"
+    | "organic"
+    | "radial"
+    | "sequential"
+    | "structural"
+    | "tree";
+
+/** Link simplificado usado pelos algoritmos de layout. */
+export interface GraphLayoutLink<T = any> {
+    /** Identificador único do link. */
+    id: string;
+    /** Id do nó de origem. */
+    from: string;
+    /** Id do nó de destino. */
+    to: string;
+    /** Dados opcionais associados ao link. */
+    data?: T;
+}
+
+/** Representa um nó com dimensões e posição para cálculo de layout. */
+export interface GraphLayoutNode<T = any> {
+    /** Identificador único do nó. */
+    id: string;
+    /** Largura atual do nó em pixels. */
+    width: number;
+    /** Altura atual do nó em pixels. */
+    height: number;
+    /** Posição atual do nó no mundo do grafo. */
+    position: Point3D;
+    /** Dados opcionais associados ao nó. */
+    data?: T;
+}
+
+/** Parâmetros compartilhados pelas implementações de layout. */
+export interface GraphLayoutOptions {
+    /** Dimensões disponíveis da viewport ao aplicar o layout. */
+    viewport?: { width: number; height: number };
+    /** Espaçamento horizontal base entre nós. */
+    gapX?: number;
+    /** Espaçamento vertical base entre nós. */
+    gapY?: number;
+    /** Padding aplicado ao normalizar o resultado. */
+    padding?: number;
+    /** Número de colunas desejado para layouts sequenciais. */
+    columns?: number;
+    /** Direção preferencial de layouts hierárquicos. */
+    direction?: "LR" | "RL" | "TB" | "BT";
+    /** Quantidade de iterações para layouts iterativos. */
+    iterations?: number;
+    /** Distância radial entre camadas. */
+    radiusStep?: number;
+    /** Centro alvo opcional para normalização do resultado. */
+    center?: { x: number; y: number };
+}
+
+/** Entrada comum compartilhada pelos algoritmos na pasta `layouts/`. */
+export interface GraphLayoutInput<NodeData = any, LinkData = any> {
+    /** Snapshot dos nós a serem organizados. */
+    nodes: GraphLayoutNode<NodeData>[];
+    /** Snapshot dos links que conectam os nós. */
+    links: GraphLayoutLink<LinkData>[];
+    /** Opções opcionais para ajuste fino do algoritmo. */
+    options?: GraphLayoutOptions;
+}
+
+/** Posição final calculada para um nó específico. */
+export interface GraphLayoutPosition {
+    /** Id do nó reposicionado. */
+    id: string;
+    /** Nova posição calculada. */
+    position: Point3D;
+}
+
+/** Resultado de um algoritmo de layout. */
+export interface GraphLayoutResult {
+    /** Posições calculadas para cada nó do snapshot. */
+    positions: GraphLayoutPosition[];
+    /** Bounding box total do layout resultante. */
+    bounds: { left: number; top: number; width: number; height: number };
+}
+
+/** Estado de uma extremidade de link reportado em runtime. */
+export interface GraphLinkEndpointState {
+    /** Id do nó que contém a porta. */
+    nodeId: string;
+    /** Id da porta vinculada. */
+    portId: string;
+    /** Coordenada X atual no espaço do grafo. */
+    x: number;
+    /** Coordenada Y atual no espaço do grafo. */
+    y: number;
+    /** Direção geométrica usada no cálculo do path. */
+    direction: "left" | "right" | "top" | "bottom";
+}
+
+/** Estado runtime atual de um link renderizado. */
+export interface GraphLinkRuntimeState {
+    /** Id do link. */
+    id: string;
+    /** Endpoint de origem calculado. */
+    from: GraphLinkEndpointState;
+    /** Endpoint de destino calculado. */
+    to: GraphLinkEndpointState;
+    /** Bounding box corrente do SVG do link. */
+    bounds: { left: number; top: number; width: number; height: number };
+    /** Indica se o link está inválido/orfão no momento. */
+    invalid: boolean;
+}
+
+/** Estado runtime atual de um nó renderizado. */
+export interface GraphNodeRuntimeState<T = any> {
+    /** Id do nó. */
+    id: string;
+    /** Posição atual do nó. */
+    position: Point3D;
+    /** Largura medida do nó. */
+    width: number;
+    /** Altura medida do nó. */
+    height: number;
+    /** Dados associados ao nó. */
+    data?: T;
+}
 
 /** Propriedades do componente GraphObject (nó do grafo). */
 export interface GraphObjectProps<T = any> {
     /** Identificador único do nó. */
     id: string;
+    /** Posição controlada pelo Graph quando disponível. */
+    position?: Point3D;
     /** Definições de portas do nó (opcional). */
     ports?: PortDefinition[];
     /** Posição inicial {x,y,z} opcional. */
@@ -141,6 +294,8 @@ export interface GraphObjectProps<T = any> {
     data?: T;
     /** Callback chamado quando o nó é movido. */
     onMove?: (newPosition: Point3D) => void;
+    /** Callback chamado quando o nó reporta seu estado runtime atual. */
+    onStateChange?: (state: GraphNodeRuntimeState<T>) => void;
     /** Função que renderiza o conteúdo do nó com as portas. */
     children(props: NodeObjectTemplateProps<T>): React.ReactNode;
 }

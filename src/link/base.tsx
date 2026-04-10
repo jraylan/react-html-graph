@@ -4,7 +4,7 @@ import useGraphError from "../hooks/error";
 import useGraphRoot from "../hooks/graph-root";
 import { calculatePath, calculateLabels } from "../calculations";
 import { PortDirection } from "../calculations/types";
-import { LinkLabel } from "../types";
+import { GraphLinkRuntimeState, LinkLabel } from "../types";
 
 type StandardTextAnchor = "start" | "middle" | "end" | undefined;
 
@@ -23,6 +23,7 @@ type GraphLinkProps = {
     gapSize?: number;
     forwardDuration?: number;
     reverseDuration?: number;
+    onStateChange?: (state: GraphLinkRuntimeState) => void;
 };
 
 /**
@@ -48,6 +49,7 @@ const MemoizedGraphLink = memo(function GraphLink({
     gapSize = 8,
     forwardDuration = 1,
     reverseDuration = 1,
+    onStateChange,
 }: GraphLinkProps) {
     const rootRef = useRef<SVGSVGElement>(null);
     const forwardRef = useRef<SVGPathElement>(null);
@@ -74,10 +76,12 @@ const MemoizedGraphLink = memo(function GraphLink({
     const gapRef = useRef(gap);
     const labelsRef = useRef(labels);
     const invalidRef = useRef(invalid);
+    const onStateChangeRef = useRef(onStateChange);
 
     gapRef.current = gap;
     labelsRef.current = labels;
     invalidRef.current = invalid;
+    onStateChangeRef.current = onStateChange;
 
     // Descobre nós
     const checkNodes = useCallback(() => {
@@ -148,6 +152,26 @@ const MemoizedGraphLink = memo(function GraphLink({
             fwd.setAttribute("d", forwardD);
             rev.setAttribute("d", reverseD);
 
+            onStateChangeRef.current?.({
+                id,
+                from: {
+                    nodeId: from.node,
+                    portId: from.port,
+                    x: pos.fromX,
+                    y: pos.fromY,
+                    direction: pos.fromDir,
+                },
+                to: {
+                    nodeId: to.node,
+                    portId: to.port,
+                    x: pos.toX,
+                    y: pos.toY,
+                    direction: pos.toDir,
+                },
+                bounds,
+                invalid: false,
+            });
+
             if (labelResult) {
                 const labelGroup = labelGroupRef.current;
                 if (labelGroup) {
@@ -164,7 +188,7 @@ const MemoizedGraphLink = memo(function GraphLink({
                 }
             }
         });
-    }, []);
+    }, [from.node, from.port, id, to.node, to.port]);
 
     // Acumula offsets do elemento até o ancestral de referência
     const accumulateOffset = useCallback(
@@ -296,6 +320,29 @@ const MemoizedGraphLink = memo(function GraphLink({
     useEffect(() => {
         return () => cancelAnimationFrame(rafIdRef.current);
     }, []);
+
+    useEffect(() => {
+        if (!invalid) return;
+        onStateChangeRef.current?.({
+            id,
+            from: {
+                nodeId: from.node,
+                portId: from.port,
+                x: 0,
+                y: 0,
+                direction: "right",
+            },
+            to: {
+                nodeId: to.node,
+                portId: to.port,
+                x: 0,
+                y: 0,
+                direction: "left",
+            },
+            bounds: { left: 0, top: 0, width: 0, height: 0 },
+            invalid: true,
+        });
+    }, [from.node, from.port, id, invalid, to.node, to.port]);
 
     if (invalid) return <></>;
 

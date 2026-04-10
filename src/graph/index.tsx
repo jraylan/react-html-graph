@@ -8,12 +8,29 @@ import React, {
     useState,
 } from "react";
 
-import { Viewbox, GraphProps, GraphError, GraphApi, NodeDefinition, LinkDefinition } from "../types";
+import {
+    Viewbox,
+    GraphProps,
+    GraphError,
+    GraphApi,
+    NodeDefinition,
+    LinkDefinition,
+    GraphApplyLayoutInput,
+    GraphCentralizeOptions,
+    GraphLayoutInput,
+    GraphLayoutLink,
+    GraphLayoutNode,
+    GraphLayoutResult,
+    GraphLinkRuntimeState,
+    GraphNodeRuntimeState,
+} from "../types";
+import { calculateFitView } from "../calculations";
 import { GraphContext } from "../context/graph-context";
 import { ErrorContext } from "../context/error-context";
 import { ConnectionContext } from "../context/connection-context";
 import { GraphRootContext } from "../context/graph-root-context";
 import ConnectionProvider from "../providers/connection-provider";
+import { GRAPH_LAYOUT_EXECUTORS } from "../layouts";
 import GraphObject from "../nodes/base";
 import GraphLink from "../link/base";
 import ViewBox from "./viewbox";
@@ -22,6 +39,42 @@ import "../style.css";
 type PanState = {
     panning: boolean,
     panPointStart: { x: number, y: number }
+}
+
+type GraphSnapshot = {
+    nodes: GraphLayoutNode[];
+    links: GraphLayoutLink[];
+    bounds: { left: number; top: number; width: number; height: number };
+}
+
+
+function getSnapshotBounds(nodes: GraphLayoutNode[]) {
+    if (nodes.length === 0) {
+        return { left: 0, top: 0, width: 0, height: 0 };
+    }
+
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+
+    for (const node of nodes) {
+        left = Math.min(left, node.position.x);
+        top = Math.min(top, node.position.y);
+        right = Math.max(right, node.position.x + node.width);
+        bottom = Math.max(bottom, node.position.y + node.height);
+    }
+
+    if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {
+        return { left: 0, top: 0, width: 0, height: 0 };
+    }
+
+    return {
+        left,
+        top,
+        width: Math.max(0, right - left),
+        height: Math.max(0, bottom - top),
+    };
 }
 
 
@@ -42,6 +95,8 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
         x: 0, y: 0, zoom: 1, width: 0, height: 0,
     })
     const viewboxRef = useRef<Viewbox>(viewbox)
+    const nodeStateRef = useRef<Map<string, GraphNodeRuntimeState>>(new Map());
+    const linkStateRef = useRef<Map<string, GraphLinkRuntimeState>>(new Map());
 
     // Wrapper que mantém ref e state sempre sincronizados.
     // A ref é a fonte de verdade; updaters leem dela (não do state batched).
@@ -51,27 +106,60 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
         setViewBoxState(newVb);
     }, []);
 
+    const handleNodeStateChange = useCallback((state: GraphNodeRuntimeState) => {
+        nodeStateRef.current.set(state.id, state);
+    }, []);
+
+    const handleLinkStateChange = useCallback((state: GraphLinkRuntimeState) => {
+        linkStateRef.current.set(state.id, state);
+    }, []);
+
+    const handleNodeMove = useCallback((nodeId: string, newPosition: GraphNodeRuntimeState["position"]) => {
+        setNodeDefs(prev => {
+            let changed = false;
+            const next = prev.map(def => {
+                if (def.id !== nodeId) return def;
+                if (
+                    def.position.x === newPosition.x &&
+                    def.position.y === newPosition.y &&
+                    def.position.z === newPosition.z
+                ) {
+                    return def;
+                }
+                changed = true;
+                return {
+                    ...def,
+                    position: newPosition,
+                };
+            });
+            return changed ? next : prev;
+        });
+    }, []);
+
     // Converte definicoes em React elements para GraphContext
     const nodes = useMemo(() =>
         nodeDefs.map(def => (
             <GraphObject
                 key={def.id}
                 id={def.id}
+                position={def.position}
                 ports={def.ports}
                 data={def.data}
                 initialPosition={def.position}
+                onMove={(newPosition) => handleNodeMove(def.id, newPosition)}
+                onStateChange={handleNodeStateChange}
             >
                 {def.template}
             </GraphObject>
         )),
-        [nodeDefs]
+        [handleNodeMove, handleNodeStateChange, nodeDefs]
     );
 
     const links = useMemo(() =>
         linkDefs.map(def => (
-            <GraphLink key={def.id} {...def} />
+            <GraphLink key={def.id} {...def} onStateChange={handleLinkStateChange} />
         )),
-        [linkDefs]
+        [handleLinkStateChange, linkDefs]
     );
 
     const panRef = useRef<PanState>({
@@ -194,6 +282,24 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
         }
     }, [nodeDefs, linkDefs, handleError]);
 
+    useEffect(() => {
+        const validIds = new Set(nodeDefs.map(def => def.id));
+        for (const id of [...nodeStateRef.current.keys()]) {
+            if (!validIds.has(id)) {
+                nodeStateRef.current.delete(id);
+            }
+        }
+    }, [nodeDefs]);
+
+    useEffect(() => {
+        const validIds = new Set(linkDefs.map(def => def.id));
+        for (const id of [...linkStateRef.current.keys()]) {
+            if (!validIds.has(id)) {
+                linkStateRef.current.delete(id);
+            }
+        }
+    }, [linkDefs]);
+
     return (
         <ErrorContext.Provider value={{ reportError: handleError }}>
             <GraphContext.Provider value={{
@@ -204,7 +310,20 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
             }}>
                 <GraphRootContext.Provider value={rootRef}>
                     <ConnectionProvider graphApiRef={graphApiRef}>
-                        <GraphHandle ref={ref} graphApiRef={graphApiRef} setNodeDefs={setNodeDefs} setLinkDefs={setLinkDefs} />
+                        <GraphHandle
+                            ref={ref}
+                            graphApiRef={graphApiRef}
+                            rootRef={rootRef}
+                            nodeDefs={nodeDefs}
+                            linkDefs={linkDefs}
+                            nodeStateRef={nodeStateRef}
+                            linkStateRef={linkStateRef}
+                            mode={mode}
+                            viewboxRef={viewboxRef}
+                            setViewBox={setViewBox}
+                            setNodeDefs={setNodeDefs}
+                            setLinkDefs={setLinkDefs}
+                        />
                         <graph-root
                             ref={rootRef}
                             onMouseDown={handleMouseDown}
@@ -229,13 +348,161 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
  * Esta função não renderiza nada (retorna null) e serve apenas para vincular
  * handlers/estado ao objeto de API.
  */
-function GraphHandle({ ref, graphApiRef, setNodeDefs, setLinkDefs }: {
+function GraphHandle({
+    ref,
+    graphApiRef,
+    rootRef,
+    nodeDefs,
+    linkDefs,
+    nodeStateRef,
+    linkStateRef,
+    mode,
+    viewboxRef,
+    setViewBox,
+    setNodeDefs,
+    setLinkDefs,
+}: {
     ref?: React.Ref<GraphApi>;
     graphApiRef: React.RefObject<GraphApi | null>;
+    rootRef: React.RefObject<HTMLElement | null>;
+    nodeDefs: NodeDefinition[];
+    linkDefs: LinkDefinition[];
+    nodeStateRef: React.RefObject<Map<string, GraphNodeRuntimeState>>;
+    linkStateRef: React.RefObject<Map<string, GraphLinkRuntimeState>>;
+    mode: GraphProps["mode"];
+    viewboxRef: React.RefObject<Viewbox>;
+    setViewBox: (updater: Viewbox | ((prev: Viewbox) => Viewbox)) => void;
     setNodeDefs: React.Dispatch<React.SetStateAction<NodeDefinition[]>>;
     setLinkDefs: React.Dispatch<React.SetStateAction<LinkDefinition[]>>;
 }) {
     const { connect, disconnect, connections } = useContext(ConnectionContext);
+
+    const buildSnapshot = useCallback((): GraphSnapshot => {
+        const nodes: GraphLayoutNode[] = nodeDefs.map(def => {
+            const runtimeState = nodeStateRef.current.get(def.id);
+            return {
+                id: def.id,
+                width: Math.max(1, runtimeState?.width ?? 1),
+                height: Math.max(1, runtimeState?.height ?? 1),
+                position: runtimeState?.position ?? def.position,
+                data: def.data,
+            };
+        });
+
+        const links: GraphLayoutLink[] = linkDefs.map(def => ({
+            id: def.id,
+            from: def.from.node,
+            to: def.to.node,
+            data: def.data,
+        }));
+
+        return {
+            nodes,
+            links,
+            bounds: getSnapshotBounds(nodes),
+        };
+    }, [linkDefs, nodeDefs, nodeStateRef]);
+
+    const applyPositions = useCallback((result: GraphLayoutResult) => {
+        for (const item of result.positions) {
+            const currentState = nodeStateRef.current.get(item.id);
+            nodeStateRef.current.set(item.id, {
+                id: item.id,
+                position: item.position,
+                width: currentState?.width ?? 1,
+                height: currentState?.height ?? 1,
+                data: currentState?.data,
+            });
+        }
+
+        setNodeDefs(prev => {
+            const positionMap = new Map(result.positions.map(item => [item.id, item.position]));
+            let changed = false;
+
+            const next = prev.map(def => {
+                const newPosition = positionMap.get(def.id);
+                if (!newPosition) return def;
+                if (
+                    def.position.x === newPosition.x &&
+                    def.position.y === newPosition.y &&
+                    def.position.z === newPosition.z
+                ) {
+                    return def;
+                }
+                changed = true;
+                return {
+                    ...def,
+                    position: newPosition,
+                };
+            });
+
+            return changed ? next : prev;
+        });
+    }, [nodeStateRef, setNodeDefs]);
+
+    const centralize = useCallback(async (options?: GraphCentralizeOptions) => {
+        const snapshot = buildSnapshot();
+        const root = rootRef.current;
+        const viewportWidth = root?.clientWidth ?? viewboxRef.current.width;
+        const viewportHeight = root?.clientHeight ?? viewboxRef.current.height;
+        const fitResult = await calculateFitView({
+            nodes: snapshot.nodes.map(node => ({
+                id: node.id,
+                width: node.width,
+                height: node.height,
+                x: node.position.x,
+                y: node.position.y,
+                z: node.position.z,
+            })),
+            viewportWidth,
+            viewportHeight,
+            padding: options?.padding ?? 32,
+            minZoom: options?.minZoom ?? 0.1,
+            maxZoom: options?.maxZoom ?? 2,
+        });
+
+        const nextViewbox = {
+            ...viewboxRef.current,
+            x: fitResult.x,
+            y: fitResult.y,
+            zoom: fitResult.zoom,
+            width: viewportWidth,
+            height: viewportHeight,
+        };
+        setViewBox(nextViewbox);
+        return nextViewbox;
+    }, [buildSnapshot, rootRef, setViewBox, viewboxRef]);
+
+    const applyLayout = useCallback(async (input: GraphApplyLayoutInput) => {
+        const snapshot = buildSnapshot();
+        const root = rootRef.current;
+        const viewport = {
+            width: root?.clientWidth ?? viewboxRef.current.width,
+            height: root?.clientHeight ?? viewboxRef.current.height,
+        };
+        if (mode === "readonly") {
+            return {
+                positions: snapshot.nodes.map(node => ({
+                    id: node.id,
+                    position: node.position,
+                })),
+                bounds: snapshot.bounds,
+            } satisfies GraphLayoutResult;
+        }
+
+        const executor = GRAPH_LAYOUT_EXECUTORS[input.algorithm];
+        const layoutInput: GraphLayoutInput = {
+            nodes: snapshot.nodes,
+            links: snapshot.links,
+            options: {
+                ...input.options,
+                viewport,
+            },
+        };
+        const result = await executor(layoutInput);
+        applyPositions(result);
+        return result;
+    }, [applyPositions, buildSnapshot, mode, rootRef, viewboxRef]);
 
     useImperativeHandle(ref, () => {
         const api: GraphApi = {
@@ -246,10 +513,14 @@ function GraphHandle({ ref, graphApiRef, setNodeDefs, setLinkDefs }: {
             connect,
             disconnect,
             getConnections: () => connections,
+            getNodeStates: () => Array.from(nodeStateRef.current.values()),
+            getLinkStates: () => Array.from(linkStateRef.current.values()),
+            centralize,
+            applyLayout,
         };
         (graphApiRef as React.MutableRefObject<GraphApi | null>).current = api;
         return api;
-    }, [connect, disconnect, connections, setNodeDefs, setLinkDefs, graphApiRef]);
+    }, [applyLayout, centralize, connect, connections, disconnect, graphApiRef, linkStateRef, nodeStateRef, setLinkDefs, setNodeDefs]);
 
     return null;
 }

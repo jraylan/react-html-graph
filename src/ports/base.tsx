@@ -4,7 +4,7 @@ import { useEffect, useContext, useCallback } from "react";
 import { usePortDrag, usePortDrop } from "../hooks/connection";
 import { ConnectionContext } from "../context/connection-context";
 import useGraphMode from "../hooks/graph-mode";
-import { GraphApi, GraphPortProps } from "../types";
+import { GraphPortProps } from "../types";
 
 
 

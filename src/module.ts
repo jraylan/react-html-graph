@@ -1,5 +1,5 @@
 export { default, default as Graph } from "./graph";
-export { calculateLabels, calculatePath, configureWorkerPool } from "./calculations";
+export { calculateFitView, calculateLabels, calculateLayout, calculatePath, configureWorkerPool } from "./calculations";
 export { ConnectionContext } from "./context/connection-context";
 export { ErrorContext } from "./context/error-context";
 export { GraphContext } from "./context/graph-context";
@@ -14,4 +14,5 @@ export { default as useViewbox } from "./hooks/viewbox";
 export { default as GraphLink } from "./link/base";
 export { default as GraphObject } from "./nodes/base";
 export { default as GraphPort } from "./ports/base";
+export * from "./layouts";
 export * from "./types";
