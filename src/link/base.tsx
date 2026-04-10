@@ -250,7 +250,7 @@ const MemoizedGraphLink = memo(function GraphLink({
                 strokeDasharray={dashPattern}
                 style={{
                     animationDuration: forwardDuration > 0 ? forwardDuration + "s" : "0s",
-                    animationDirection: "reverse",
+                    animationDirection: "normal",
                     ["--cycle-len" as string]: cycleLen + "px",
                 }}
             />
