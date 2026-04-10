@@ -5,7 +5,7 @@
 
 ### Bug Fixes
 
-* fix package-log.json ([2d25dfa](https://github.com/jraylan/react-html-graph/commit/2d25dfa9306421592154dc9f35a192ee50cab189))
+* fix package-lock.json ([2d25dfa](https://github.com/jraylan/react-html-graph/commit/2d25dfa9306421592154dc9f35a192ee50cab189))
 
 ## 1.0.0 (2026-04-10)
 
