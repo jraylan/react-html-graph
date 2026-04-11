@@ -678,7 +678,20 @@ function GraphHandle({
             } satisfies GraphLayoutResult;
         }
 
-        const executor = GRAPH_LAYOUT_EXECUTORS[input.algorithm];
+        const algorithm = input.algorithm;
+
+        if (typeof algorithm === "function") {
+            return await algorithm({
+                nodes: snapshot.nodes,
+                links: snapshot.links,
+                options: {
+                    ...input.options,
+                    viewport,
+                },
+            });
+        }
+
+        const executor = GRAPH_LAYOUT_EXECUTORS[algorithm];
         const layoutInput: GraphLayoutInput = {
             nodes: snapshot.nodes,
             links: snapshot.links,

@@ -174,7 +174,8 @@ export type GraphLayoutAlgorithm =
     | "radial"
     | "sequential"
     | "structural"
-    | "tree";
+    | "tree"
+    | ((input: GraphLayoutInput) => Promise<GraphLayoutResult>);
 
 /** Link simplificado usado pelos algoritmos de layout. */
 export interface GraphLayoutLink<T = any> {
