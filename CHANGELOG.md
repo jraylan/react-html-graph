@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v1.2.3...react-html-graph-v1.2.4) (2026-04-11)
+
+
+### Features
+
+* Add capability to use a custom layout algorithm ([7f23087](https://github.com/jraylan/react-html-graph/commit/7f23087f5db48660a3d79835762590a0176004d8))
+
 ## [1.2.3](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v1.2.2...react-html-graph-v1.2.3) (2026-04-11)
 
 
