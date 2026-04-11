@@ -132,6 +132,9 @@ export default function GraphPort({
         props.direction === "bidirectional"
             ? "bidirectional"
             : props.direction;
+    const portLocationAttr = typeof props.location === "string"
+        ? props.location
+        : "coordinates";
 
     return (
         <node-graph-port
@@ -141,6 +144,7 @@ export default function GraphPort({
             onMouseOver={forwardMouseOverEvents}
             onMouseLeave={forwardMouseLeaveEvents}
             node-port={portAttr}
+            port-location={portLocationAttr}
             port-id={props.id}
         >
             {props.children({

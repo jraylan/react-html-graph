@@ -173,12 +173,13 @@ export default function BidirectionalPath({
             portOrigin: { x: number; y: number } | null,
             delta: { x: number; y: number },
             invertDelta = false,
+            preferVector = false,
         ): PortDirection => {
             const normalizedDelta = invertDelta
                 ? { x: -delta.x, y: -delta.y }
                 : delta;
 
-            if (!portOrigin) {
+            if (preferVector || !portOrigin) {
                 if (Math.abs(normalizedDelta.x) >= Math.abs(normalizedDelta.y)) {
                     return normalizedDelta.x >= 0 ? "right" : "left";
                 }
@@ -233,12 +234,14 @@ export default function BidirectionalPath({
         const toX = toNode.offsetLeft + (toPortOrigin?.x ?? toPortOffset.x);
         const toY = toNode.offsetTop + (toPortOrigin?.y ?? toPortOffset.y);
         const delta = { x: toX - fromX, y: toY - fromY };
+        const fromUsesCoordinateLocation = fromPort?.getAttribute("port-location") === "coordinates";
+        const toUsesCoordinateLocation = toPort?.getAttribute("port-location") === "coordinates";
 
         positionsRef.current = {
             fromX, fromY,
             toX, toY,
-            fromDir: detectPortDir(fromNode, fromPortOrigin, delta),
-            toDir: detectPortDir(toNode, toPortOrigin, delta, true),
+            fromDir: detectPortDir(fromNode, fromPortOrigin, delta, false, fromUsesCoordinateLocation),
+            toDir: detectPortDir(toNode, toPortOrigin, delta, true, toUsesCoordinateLocation),
         };
         cancelAnimationFrame(rafIdRef.current);
         rafIdRef.current = requestAnimationFrame(runCalculation);

@@ -22,6 +22,7 @@ declare module 'react' {
             'node-graph-port': React.DetailedHTMLProps<React.HTMLAttributes<HTMLDivElement>, HTMLDivElement> & {
                 ref?: React.Ref<HTMLDivElement>
                 'node-port'?: string
+                'port-location'?: string
                 'port-id'?: string
             };
         }
@@ -50,6 +51,7 @@ declare module 'react/jsx-runtime' {
             'node-graph-port': React.DetailedHTMLProps<React.HTMLAttributes<HTMLDivElement>, HTMLDivElement> & {
                 ref?: React.Ref<HTMLDivElement>
                 'node-port': string
+                'port-location'?: string
                 'port-id': string
             };
         }
