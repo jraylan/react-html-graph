@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.5](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v1.2.4...react-html-graph-v1.2.5) (2026-04-11)
+
+
+### Bug Fixes
+
+* Fix type erros ([d0660b9](https://github.com/jraylan/react-html-graph/commit/d0660b900ef8dc27f5e472e87e88969dd0deca15))
+
 ## [1.2.4](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v1.2.3...react-html-graph-v1.2.4) (2026-04-11)
 
 
