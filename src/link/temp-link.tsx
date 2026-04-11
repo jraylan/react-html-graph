@@ -54,21 +54,40 @@ export default function TempLink() {
         const portRect = el.getBoundingClientRect();
         const viewbox = getViewbox();
 
-        setSourcePos({
+        const source = {
             x: (portRect.left + portRect.width / 2 - graphRect.left) / viewbox.zoom + viewbox.x,
             y: (portRect.top + portRect.height / 2 - graphRect.top) / viewbox.zoom + viewbox.y,
-        });
+        };
+
+        setSourcePos(source);
+        setCursor(source);
     }, [dragState, getViewbox, graphRoot]);
 
     if (!dragState.active || !sourcePos) return null;
 
     const dx = cursor.x - sourcePos.x;
     const cp = Math.abs(dx) * 0.5 || 50;
+    const startControlX = sourcePos.x + cp;
+    const endControlX = cursor.x - cp;
     const d = `M ${sourcePos.x} ${sourcePos.y} C ${sourcePos.x + cp} ${sourcePos.y}, ${cursor.x - cp} ${cursor.y}, ${cursor.x} ${cursor.y}`;
+    const minX = Math.min(sourcePos.x, cursor.x, startControlX, endControlX) - 8;
+    const minY = Math.min(sourcePos.y, cursor.y) - 8;
+    const maxX = Math.max(sourcePos.x, cursor.x, startControlX, endControlX) + 8;
+    const maxY = Math.max(sourcePos.y, cursor.y) + 8;
+    const width = Math.max(1, maxX - minX);
+    const height = Math.max(1, maxY - minY);
 
     return (
         <node-graph-temp-link>
-            <svg>
+            <svg
+                style={{
+                    left: `${minX}px`,
+                    top: `${minY}px`,
+                    width: `${width}px`,
+                    height: `${height}px`,
+                }}
+                viewBox={`${minX} ${minY} ${width} ${height}`}
+            >
                 <path d={d} fill="none" stroke="#888" strokeWidth={2} strokeDasharray="6 3" vectorEffect="non-scaling-stroke" />
             </svg>
         </node-graph-temp-link>
