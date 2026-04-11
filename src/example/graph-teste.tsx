@@ -397,7 +397,7 @@ export default function GraphTest() {
             api.registerLinkTemplate("ether", () => <LinkPath />);
 
             const snapshot = createMockSnapshot();
-            api.deserialize(snapshot);
+            api.load(snapshot);
         },
         // defaultNodeTemplate: (props) => <NodeTemplate {...props} />, // Optional
         // defaultLinkTemplate: (props) => <LinkPath {...props} />, // Optional
@@ -434,9 +434,9 @@ export default function GraphTest() {
         if (!api) return;
 
         const snapshot = createMockSnapshot();
-        api.deserialize(snapshot);
+        api.load(snapshot);
         setSerializedGraph(JSON.stringify(snapshot, null, 2));
-        setSerializationStatus("Snapshot de exemplo restaurado via deserialize().");
+        setSerializationStatus("Snapshot de exemplo restaurado via load().");
         await api.centralize({ padding: 48 });
         updateStateSummary();
     }, [graphApi, updateStateSummary]);
@@ -451,7 +451,7 @@ export default function GraphTest() {
         updateStateSummary();
     }, [graphApi, updateStateSummary]);
 
-    const handleDeserialize = useCallback(async () => {
+    const handleload = useCallback(async () => {
         const api = graphApi;
         if (!api) return;
 
@@ -461,7 +461,7 @@ export default function GraphTest() {
         }
 
         try {
-            api.deserialize(serializedGraph);
+            api.load(serializedGraph);
             setSerializationStatus("Snapshot restaurado a partir do JSON informado.");
             await api.centralize({ padding: 48 });
             updateStateSummary();
@@ -506,7 +506,7 @@ export default function GraphTest() {
                     <button onClick={() => handleCentralize()}>Centralizar</button>
                     <button onClick={updateStateSummary}>Ler estado</button>
                     <button onClick={handleSerialize}>Serializar</button>
-                    <button onClick={() => void handleDeserialize()}>Desserializar</button>
+                    <button onClick={() => void handleload()}>Desserializar</button>
                     <button onClick={() => void handleLoadMockSnapshot()}>Restaurar demo</button>
                     {LAYOUTS.map(layout => (
                         <button key={layout.algorithm} onClick={() => void handleApplyLayout(layout.algorithm)}>

@@ -570,7 +570,7 @@ function GraphHandle({
         };
     }, [linkDefsRef, nodeDefsRef, nodeStateRef]);
 
-    const deserialize = useCallback((input: GraphSerializedState | string) => {
+    const load = useCallback((input: GraphSerializedState | string) => {
         const snapshot = normalizeSerializedGraph(input);
         const previousStates = nodeStateRef.current;
 
@@ -707,7 +707,7 @@ function GraphHandle({
         centralize: () => Promise.resolve({} as Viewbox),
         applyLayout: () => Promise.resolve({} as GraphLayoutResult),
         serialize: () => ({ nodes: [], links: [] }),
-        deserialize: () => { },
+        load: () => { },
     });
 
     // Atualiza a ref a cada render para capturar closures atualizadas
@@ -740,7 +740,7 @@ function GraphHandle({
         centralize,
         applyLayout,
         serialize,
-        deserialize,
+        load,
     };
 
     // Bind único — delega via implRef para closures sempre atualizadas
@@ -759,7 +759,7 @@ function GraphHandle({
             centralize: (...args) => implRef.current.centralize(...args),
             applyLayout: (...args) => implRef.current.applyLayout(...args),
             serialize: () => implRef.current.serialize(),
-            deserialize: (...args) => implRef.current.deserialize(...args),
+            load: (...args) => implRef.current.load(...args),
         });
         return () => internal._unbind();
     }, [api]);

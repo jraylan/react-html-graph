@@ -92,7 +92,7 @@ export interface GraphApi {
     /** Serializa o snapshot atual de nós e links do grafo. */
     serialize(): GraphSerializedState;
     /** Restaura nós e links do grafo a partir de um snapshot ou JSON serializado. */
-    deserialize(input: GraphSerializedState | string): void;
+    load(input: GraphSerializedState | string): void;
     /** Registra um tipo de nó com portas e template opcionais. */
     registerNodeType(name: string, definition: NodeTypeDefinition): void;
     /** Define o template padrão para nós sem template específico no tipo. */

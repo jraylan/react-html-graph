@@ -51,7 +51,7 @@ export interface GraphApiBindings {
     centralize(options?: GraphCentralizeOptions): Promise<Viewbox>;
     applyLayout(input: GraphApplyLayoutInput): Promise<GraphLayoutResult>;
     serialize(): GraphSerializedState;
-    deserialize(input: GraphSerializedState | string): void;
+    load(input: GraphSerializedState | string): void;
 }
 
 export interface UseGraphApiOptions {
@@ -104,7 +104,7 @@ function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): Grap
         centralize: NOOP_PROMISE,
         applyLayout: NOOP_PROMISE,
         serialize: NOOP_SERIALIZE,
-        deserialize: NOOP,
+        load: NOOP,
 
         _bind(impl: GraphApiBindings) {
             api.addNode = impl.addNode;
@@ -119,7 +119,7 @@ function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): Grap
             api.centralize = impl.centralize;
             api.applyLayout = impl.applyLayout;
             api.serialize = impl.serialize;
-            api.deserialize = impl.deserialize;
+            api.load = impl.load;
 
             if (!api._connected) {
                 api._connected = true;
@@ -141,7 +141,7 @@ function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): Grap
             api.centralize = NOOP_PROMISE;
             api.applyLayout = NOOP_PROMISE;
             api.serialize = NOOP_SERIALIZE;
-            api.deserialize = NOOP;
+            api.load = NOOP;
         },
     };
 
