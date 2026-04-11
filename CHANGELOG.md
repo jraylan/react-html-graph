@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.2.3](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v1.2.2...react-html-graph-v1.2.3) (2026-04-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* add a stable graph API hook with node type and link template registries
+* add graph, node and link context/providers for event bus, registry lookup and link info access
+* extract node drag handling into move behaviour and expose node/local event emitters
+* refactor link rendering to delegate visual output to templates and export BidirectionalPath
+* update ports, connection flow and shared types to use connectionType and graph-driven drag callbacks
+* Graph now consumes an api prop created by useGraphApi instead of exposing the imperative API through ref.
+* Node definitions now require nodeType registration, link rendering is template-driven, and several public interfaces rename type to connectionType.
+* add custom link rendering and graph event registries
+
+### Features
+
+* add a stable graph API hook with node type and link template registries ([69b5c1b](https://github.com/jraylan/react-html-graph/commit/69b5c1b1d724c62b607e30b5a05bbb073de24794))
+* add custom link rendering and graph event registries ([69b5c1b](https://github.com/jraylan/react-html-graph/commit/69b5c1b1d724c62b607e30b5a05bbb073de24794))
+* add graph, node and link context/providers for event bus, registry lookup and link info access ([69b5c1b](https://github.com/jraylan/react-html-graph/commit/69b5c1b1d724c62b607e30b5a05bbb073de24794))
+* add serialize/deserialize capability ([17e6109](https://github.com/jraylan/react-html-graph/commit/17e61094d568356699faaee7cf10f490bfbdc772))
+
+
+### Bug Fixes
+
+* fix path direction for ports with coordinates ([473b83f](https://github.com/jraylan/react-html-graph/commit/473b83fbf685025801f9a9396a2afa89b67e8bfd))
+* fix TempLink not showing when connecting nodes. ([0b2e92f](https://github.com/jraylan/react-html-graph/commit/0b2e92f1dfa733827e654a0c93dc35d14c3c529f))
+* Fix tree layout ([cce0bca](https://github.com/jraylan/react-html-graph/commit/cce0bcac64d3983797bbb5e2fa538d72fc5b3909))
+* layout issues and graph returning to original position when moving ([510a885](https://github.com/jraylan/react-html-graph/commit/510a8850c36d9f76beee09aeba71a2c7fb77b81f))
+
+
+### Code Refactoring
+
+* extract node drag handling into move behaviour and expose node/local event emitters ([69b5c1b](https://github.com/jraylan/react-html-graph/commit/69b5c1b1d724c62b607e30b5a05bbb073de24794))
+* Graph now consumes an api prop created by useGraphApi instead of exposing the imperative API through ref. ([69b5c1b](https://github.com/jraylan/react-html-graph/commit/69b5c1b1d724c62b607e30b5a05bbb073de24794))
+* Node definitions now require nodeType registration, link rendering is template-driven, and several public interfaces rename type to connectionType. ([69b5c1b](https://github.com/jraylan/react-html-graph/commit/69b5c1b1d724c62b607e30b5a05bbb073de24794))
+* refactor link rendering to delegate visual output to templates and export BidirectionalPath ([69b5c1b](https://github.com/jraylan/react-html-graph/commit/69b5c1b1d724c62b607e30b5a05bbb073de24794))
+* update ports, connection flow and shared types to use connectionType and graph-driven drag callbacks ([69b5c1b](https://github.com/jraylan/react-html-graph/commit/69b5c1b1d724c62b607e30b5a05bbb073de24794))
+
 ## [1.2.2](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v1.2.1...react-html-graph-v1.2.2) (2026-04-10)
 
 
