@@ -696,6 +696,151 @@ function workerSource() {
         return normalizeLayout(nodes, packDisconnectedComponents(nodes, links, adjusted, options), options);
     }
 
+    function layoutTree(nodes: WorkerLayoutNode[], links: WorkerLayoutLink[], options: any = {}) {
+        const { outgoing, incoming, indegree } = buildGraphIndex(nodes, links);
+        const gapX = options.gapX ?? 100;
+        const gapY = options.gapY ?? 80;
+        const direction = getLayoutDirection(options, "TB", false);
+        const depths = getHierarchicalDepths(nodes, links, true);
+        const order = sortNodeIds(nodes);
+        const fallbackOrderIndex = new Map(order.map((id, index) => [id, index]));
+        const nodeMap = new Map(nodes.map(node => [node.id, node]));
+        const layers = new Map<number, string[]>();
+
+        for (const id of order) {
+            const depth = depths.get(id) ?? 0;
+            const group = layers.get(depth) ?? [];
+            group.push(id);
+            layers.set(depth, group);
+        }
+
+        optimizeHierarchicalLayerOrder(layers, depths, incoming, outgoing, fallbackOrderIndex);
+
+        const layerOrderIndex = buildLayerOrderIndex(layers);
+        const roots = order.filter(id => (indegree.get(id) ?? 0) === 0);
+        const rootSet = new Set(roots);
+        const forestRoots: string[] = [];
+        const assigned = new Set<string>();
+        const children = new Map<string, string[]>();
+
+        const sortByTreeOrder = (leftId: string, rightId: string) => {
+            const leftDepth = depths.get(leftId) ?? 0;
+            const rightDepth = depths.get(rightId) ?? 0;
+            if (leftDepth !== rightDepth) return leftDepth - rightDepth;
+            return (layerOrderIndex.get(leftId) ?? fallbackOrderIndex.get(leftId) ?? 0)
+                - (layerOrderIndex.get(rightId) ?? fallbackOrderIndex.get(rightId) ?? 0);
+        };
+
+        const buildTree = (nodeId: string) => {
+            const currentDepth = depths.get(nodeId) ?? 0;
+            const childIds = (outgoing.get(nodeId) ?? [])
+                .filter(childId => childId !== nodeId && (depths.get(childId) ?? currentDepth) > currentDepth && !assigned.has(childId))
+                .sort(sortByTreeOrder);
+
+            children.set(nodeId, childIds);
+
+            for (const childId of childIds) {
+                assigned.add(childId);
+                buildTree(childId);
+            }
+        };
+
+        for (const rootId of [...roots, ...order.filter(id => !rootSet.has(id))]) {
+            if (assigned.has(rootId)) continue;
+            assigned.add(rootId);
+            forestRoots.push(rootId);
+            buildTree(rootId);
+        }
+
+        const layerKeys = [...layers.keys()].sort((a, b) => a - b);
+        const primaryOffsetByDepth = new Map<number, number>();
+        let primaryCursor = 0;
+
+        for (const layerKey of layerKeys) {
+            const ids = layers.get(layerKey) ?? [];
+            const primarySize = ids.reduce((max, id) => {
+                const node = nodeMap.get(id);
+                if (!node) return max;
+                return Math.max(max, direction === "LR" || direction === "RL" ? node.width : node.height);
+            }, 0);
+
+            primaryOffsetByDepth.set(layerKey, primaryCursor);
+            primaryCursor += primarySize + (direction === "LR" || direction === "RL" ? gapX : gapY);
+        }
+
+        const secondaryGap = direction === "LR" || direction === "RL" ? gapY : gapX;
+        const secondarySize = (nodeId: string) => {
+            const node = nodeMap.get(nodeId);
+            if (!node) return 0;
+            return direction === "LR" || direction === "RL" ? node.height : node.width;
+        };
+
+        const secondaryPositionById = new Map<string, number>();
+        let secondaryCursor = 0;
+
+        const placeSubtree = (nodeId: string): { start: number; end: number } => {
+            const node = nodeMap.get(nodeId);
+            if (!node) {
+                return { start: secondaryCursor, end: secondaryCursor };
+            }
+
+            const nodeSecondarySize = secondarySize(nodeId);
+            const childIds = children.get(nodeId) ?? [];
+
+            if (childIds.length === 0) {
+                const start = secondaryCursor;
+                secondaryPositionById.set(nodeId, start);
+                secondaryCursor += nodeSecondarySize + secondaryGap;
+                return { start, end: start + nodeSecondarySize };
+            }
+
+            let start = Infinity;
+            let end = -Infinity;
+
+            for (const childId of childIds) {
+                const bounds = placeSubtree(childId);
+                start = Math.min(start, bounds.start);
+                end = Math.max(end, bounds.end);
+            }
+
+            const centeredStart = start + (end - start - nodeSecondarySize) / 2;
+            secondaryPositionById.set(nodeId, centeredStart);
+
+            return {
+                start: Math.min(start, centeredStart),
+                end: Math.max(end, centeredStart + nodeSecondarySize),
+            };
+        };
+
+        for (const rootId of forestRoots) {
+            placeSubtree(rootId);
+            secondaryCursor += secondaryGap;
+        }
+
+        const positions = order
+            .map(id => {
+                const node = nodeMap.get(id);
+                if (!node) return null;
+
+                const depth = depths.get(id) ?? 0;
+                const primary = primaryOffsetByDepth.get(depth) ?? 0;
+                const secondary = secondaryPositionById.get(id) ?? 0;
+
+                if (direction === "LR" || direction === "RL") {
+                    return { id, x: primary, y: secondary, z: node.z } satisfies WorkerLayoutPosition;
+                }
+
+                return { id, x: secondary, y: primary, z: node.z } satisfies WorkerLayoutPosition;
+            })
+            .filter((position): position is WorkerLayoutPosition => Boolean(position));
+
+        let adjusted = positions;
+        if (direction === "RL") adjusted = flipLayout(nodes, adjusted, "x");
+        if (direction === "BT") adjusted = flipLayout(nodes, adjusted, "y");
+
+        return normalizeLayout(nodes, packDisconnectedComponents(nodes, links, adjusted, options), options);
+    }
+
     function layoutRadial(nodes: WorkerLayoutNode[], links: WorkerLayoutLink[], options: any = {}) {
         const { outgoing, incoming, indegree, undirected } = buildGraphIndex(nodes, links);
         const order = sortNodeIds(nodes);
@@ -1229,7 +1374,7 @@ function workerSource() {
             case "radial":
                 return layoutRadial(nodes, links, options);
             case "tree":
-                return layoutHierarchical(nodes, links, options, true);
+                return layoutTree(nodes, links, options);
             case "structural":
                 return layoutHierarchical(nodes, links, options, false);
             case "organic": {
