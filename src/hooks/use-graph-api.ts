@@ -13,6 +13,7 @@ import type {
     Viewbox,
     NodeObjectTemplateProps,
     LinkInfoContextValue,
+    GraphSerializedState,
 } from "../types";
 
 
@@ -49,6 +50,8 @@ export interface GraphApiBindings {
     getLinkStates(): GraphLinkRuntimeState[];
     centralize(options?: GraphCentralizeOptions): Promise<Viewbox>;
     applyLayout(input: GraphApplyLayoutInput): Promise<GraphLayoutResult>;
+    serialize(): GraphSerializedState;
+    deserialize(input: GraphSerializedState | string): void;
 }
 
 export interface UseGraphApiOptions {
@@ -60,6 +63,7 @@ export interface UseGraphApiOptions {
 const NOOP = () => { };
 const NOOP_ARRAY = () => [] as any[];
 const NOOP_PROMISE = () => Promise.resolve({} as any);
+const NOOP_SERIALIZE = () => ({ nodes: [], links: [] } as GraphSerializedState);
 
 function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): GraphApiInternal {
     const nodeTypeRegistry = new Map<string, NodeTypeDefinition>();
@@ -99,6 +103,8 @@ function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): Grap
         getLinkStates: NOOP_ARRAY,
         centralize: NOOP_PROMISE,
         applyLayout: NOOP_PROMISE,
+        serialize: NOOP_SERIALIZE,
+        deserialize: NOOP,
 
         _bind(impl: GraphApiBindings) {
             api.addNode = impl.addNode;
@@ -112,6 +118,8 @@ function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): Grap
             api.getLinkStates = impl.getLinkStates;
             api.centralize = impl.centralize;
             api.applyLayout = impl.applyLayout;
+            api.serialize = impl.serialize;
+            api.deserialize = impl.deserialize;
 
             if (!api._connected) {
                 api._connected = true;
@@ -132,6 +140,8 @@ function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): Grap
             api.getLinkStates = NOOP_ARRAY;
             api.centralize = NOOP_PROMISE;
             api.applyLayout = NOOP_PROMISE;
+            api.serialize = NOOP_SERIALIZE;
+            api.deserialize = NOOP;
         },
     };
 

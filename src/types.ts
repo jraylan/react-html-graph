@@ -89,6 +89,10 @@ export interface GraphApi {
     centralize(options?: GraphCentralizeOptions): Promise<Viewbox>;
     /** Aplica um algoritmo de layout aos nós do grafo. */
     applyLayout(input: GraphApplyLayoutInput): Promise<GraphLayoutResult>;
+    /** Serializa o snapshot atual de nós e links do grafo. */
+    serialize(): GraphSerializedState;
+    /** Restaura nós e links do grafo a partir de um snapshot ou JSON serializado. */
+    deserialize(input: GraphSerializedState | string): void;
     /** Registra um tipo de nó com portas e template opcionais. */
     registerNodeType(name: string, definition: NodeTypeDefinition): void;
     /** Define o template padrão para nós sem template específico no tipo. */
@@ -272,6 +276,14 @@ export interface GraphLinkRuntimeState {
     bounds: { left: number; top: number; width: number; height: number };
     /** Indica se o link está inválido/orfão no momento. */
     invalid: boolean;
+}
+
+/** Snapshot serializável do grafo contendo nós e links. */
+export interface GraphSerializedState<NodeData = any, LinkData = any> {
+    /** Lista de nós persistidos. */
+    nodes: NodeDefinition<NodeData>[];
+    /** Lista de links persistidos. */
+    links: LinkDefinition<LinkData>[];
 }
 
 /** Estado runtime atual de um nó renderizado. */

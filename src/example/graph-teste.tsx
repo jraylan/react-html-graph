@@ -3,6 +3,7 @@ import Graph from "../graph";
 import {
     GraphApplyLayoutInput,
     GraphApi,
+    GraphSerializedState,
     LinkDefinition,
     NodeObjectTemplateProps,
     NodeDefinition,
@@ -325,14 +326,24 @@ function createLink(data: typeof MOCK_LINKS[number]): LinkDefinition {
     };
 }
 
+function createMockSnapshot(): GraphSerializedState<typeof MOCK_DEVICES[number], typeof MOCK_LINKS[number]> {
+    return {
+        nodes: MOCK_DEVICES.map(createNode),
+        links: MOCK_LINKS.map(createLink),
+    };
+}
+
 export default function GraphTest() {
     const fpsRef = useRef<HTMLSpanElement>(null);
     const fpsCountRef = useRef<number>(0);
     const lastTimeRef = useRef<number>(0);
     const [stateSummary, setStateSummary] = useState("Nós: 0 | Links: 0");
+    const [serializedGraph, setSerializedGraph] = useState("");
+    const [serializationStatus, setSerializationStatus] = useState("Use os botões abaixo para serializar ou restaurar o snapshot do grafo.");
 
     const graphApi = useGraphApi({
         onReady: (api) => {
+            handleLoadMockSnapshot();
             api.setDefaultNodeTemplate(NodeTemplate);
             api.registerNodeType(
                 "router",
@@ -384,6 +395,9 @@ export default function GraphTest() {
             api.setDefaultLinkTemplate(LinkPath);
             api.registerLinkTemplate("ftth", () => <LinkPath />);
             api.registerLinkTemplate("ether", () => <LinkPath />);
+
+            const snapshot = createMockSnapshot();
+            api.deserialize(snapshot);
         },
         // defaultNodeTemplate: (props) => <NodeTemplate {...props} />, // Optional
         // defaultLinkTemplate: (props) => <LinkPath {...props} />, // Optional
@@ -415,24 +429,46 @@ export default function GraphTest() {
         updateStateSummary();
     }, [graphApi, updateStateSummary]);
 
-    useEffect(() => {
-        const timeout = window.setTimeout(() => {
-            const api = graphApi;
-            if (api) {
-                MOCK_DEVICES.forEach(obj => {
-                    api.addNode(createNode(obj));
-                })
-                MOCK_LINKS.forEach(obj => {
-                    api.addLink(createLink(obj));
-                })
-                void api.centralize({ padding: 48 }).then(updateStateSummary);
-            }
-        }, 1000);
+    const handleLoadMockSnapshot = useCallback(async () => {
+        const api = graphApi;
+        if (!api) return;
 
-        return () => {
-            window.clearTimeout(timeout);
-        };
+        const snapshot = createMockSnapshot();
+        api.deserialize(snapshot);
+        setSerializedGraph(JSON.stringify(snapshot, null, 2));
+        setSerializationStatus("Snapshot de exemplo restaurado via deserialize().");
+        await api.centralize({ padding: 48 });
+        updateStateSummary();
     }, [graphApi, updateStateSummary]);
+
+    const handleSerialize = useCallback(() => {
+        const api = graphApi;
+        if (!api) return;
+
+        const snapshot = api.serialize();
+        setSerializedGraph(JSON.stringify(snapshot, null, 2));
+        setSerializationStatus(`Snapshot serializado com ${snapshot.nodes.length} nós e ${snapshot.links.length} links.`);
+        updateStateSummary();
+    }, [graphApi, updateStateSummary]);
+
+    const handleDeserialize = useCallback(async () => {
+        const api = graphApi;
+        if (!api) return;
+
+        if (!serializedGraph.trim()) {
+            setSerializationStatus("Cole ou gere um JSON antes de desserializar o snapshot.");
+            return;
+        }
+
+        try {
+            api.deserialize(serializedGraph);
+            setSerializationStatus("Snapshot restaurado a partir do JSON informado.");
+            await api.centralize({ padding: 48 });
+            updateStateSummary();
+        } catch (error) {
+            setSerializationStatus(error instanceof Error ? error.message : "Não foi possível desserializar o snapshot informado.");
+        }
+    }, [graphApi, serializedGraph, updateStateSummary]);
 
     useEffect(() => {
         let running = true;
@@ -469,11 +505,37 @@ export default function GraphTest() {
                     <span>{stateSummary}</span>
                     <button onClick={() => handleCentralize()}>Centralizar</button>
                     <button onClick={updateStateSummary}>Ler estado</button>
+                    <button onClick={handleSerialize}>Serializar</button>
+                    <button onClick={() => void handleDeserialize()}>Desserializar</button>
+                    <button onClick={() => void handleLoadMockSnapshot()}>Restaurar demo</button>
                     {LAYOUTS.map(layout => (
                         <button key={layout.algorithm} onClick={() => void handleApplyLayout(layout.algorithm)}>
                             {layout.label}
                         </button>
                     ))}
+                </div>
+                <div style={{ display: "grid", gap: "0.5rem", padding: "0.75rem", borderBottom: "1px solid #1a1a1a", backgroundColor: "#070707" }}>
+                    <span style={{ fontSize: "0.75rem", color: "#8ab4f8" }}>{serializationStatus}</span>
+                    <textarea
+                        value={serializedGraph}
+                        onChange={(event) => setSerializedGraph(event.target.value)}
+                        rows={10}
+                        spellCheck={false}
+                        placeholder="O JSON serializado do grafo aparecerá aqui..."
+                        style={{
+                            width: "100%",
+                            resize: "vertical",
+                            border: "1px solid #1f1f1f",
+                            borderRadius: "0.5rem",
+                            backgroundColor: "#030303",
+                            color: "#d7d7d7",
+                            padding: "0.75rem",
+                            fontSize: "0.75rem",
+                            lineHeight: 1.4,
+                            fontFamily: "Consolas, 'Courier New', monospace",
+                            boxSizing: "border-box",
+                        }}
+                    />
                 </div>
                 <div className="graph-test-graph">
                     <Graph

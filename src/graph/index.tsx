@@ -23,6 +23,8 @@ import {
     GraphLinkRuntimeState,
     GraphNodeRuntimeState,
     LinkInfoContextValue,
+    GraphSerializedState,
+    Point3D,
 } from "../types";
 import { GraphApiInternal, GraphApiBindings } from "../hooks/use-graph-api";
 import { calculateFitView } from "../calculations";
@@ -48,6 +50,146 @@ type GraphSnapshot = {
     nodes: GraphLayoutNode[];
     links: GraphLayoutLink[];
     bounds: { left: number; top: number; width: number; height: number };
+}
+
+function cloneSerializableValue<T>(value: T): T {
+    if (value == null || typeof value !== "object") {
+        return value;
+    }
+
+    if (typeof globalThis.structuredClone === "function") {
+        return globalThis.structuredClone(value);
+    }
+
+    return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === "number" && Number.isFinite(value);
+}
+
+function normalizePoint3D(value: unknown, label: string): Point3D {
+    if (!value || typeof value !== "object") {
+        throw new Error(`${label} inválida.`);
+    }
+
+    const point = value as Partial<Point3D>;
+    if (!isFiniteNumber(point.x) || !isFiniteNumber(point.y) || !isFiniteNumber(point.z)) {
+        throw new Error(`${label} deve conter x, y e z numéricos.`);
+    }
+
+    return {
+        x: point.x,
+        y: point.y,
+        z: point.z,
+    };
+}
+
+function normalizeNodeEndpoint(value: unknown, label: string): { node: string; port: string } {
+    if (!value || typeof value !== "object") {
+        throw new Error(`${label} inválido.`);
+    }
+
+    const endpoint = value as { node?: unknown; port?: unknown };
+    if (typeof endpoint.node !== "string" || endpoint.node.trim() === "") {
+        throw new Error(`${label}.node deve ser uma string não vazia.`);
+    }
+    if (typeof endpoint.port !== "string" || endpoint.port.trim() === "") {
+        throw new Error(`${label}.port deve ser uma string não vazia.`);
+    }
+
+    return {
+        node: endpoint.node,
+        port: endpoint.port,
+    };
+}
+
+function normalizeNodeDefinition(value: unknown, index: number): NodeDefinition {
+    if (!value || typeof value !== "object") {
+        throw new Error(`Nó serializado inválido na posição ${index}.`);
+    }
+
+    const node = value as Partial<NodeDefinition>;
+    if (typeof node.id !== "string" || node.id.trim() === "") {
+        throw new Error(`Nó serializado na posição ${index} precisa de um id válido.`);
+    }
+    if (typeof node.nodeType !== "string" || node.nodeType.trim() === "") {
+        throw new Error(`Nó serializado "${node.id}" precisa de um nodeType válido.`);
+    }
+
+    return {
+        id: node.id,
+        nodeType: node.nodeType,
+        position: normalizePoint3D(node.position, `position do nó "${node.id}"`),
+        data: cloneSerializableValue(node.data),
+    };
+}
+
+function normalizeLinkDefinition(value: unknown, index: number): LinkDefinition {
+    if (!value || typeof value !== "object") {
+        throw new Error(`Link serializado inválido na posição ${index}.`);
+    }
+
+    const link = value as Partial<LinkDefinition>;
+    if (typeof link.id !== "string" || link.id.trim() === "") {
+        throw new Error(`Link serializado na posição ${index} precisa de um id válido.`);
+    }
+    if (link.connectionType != null && typeof link.connectionType !== "string") {
+        throw new Error(`Link serializado "${link.id}" possui connectionType inválido.`);
+    }
+
+    return {
+        id: link.id,
+        connectionType: link.connectionType,
+        from: normalizeNodeEndpoint(link.from, `from do link "${link.id}"`),
+        to: normalizeNodeEndpoint(link.to, `to do link "${link.id}"`),
+        data: cloneSerializableValue(link.data),
+    };
+}
+
+function normalizeSerializedGraph(input: GraphSerializedState | string): GraphSerializedState {
+    const parsed = typeof input === "string"
+        ? (() => {
+            try {
+                return JSON.parse(input) as unknown;
+            } catch {
+                throw new Error("Não foi possível desserializar o grafo: JSON inválido.");
+            }
+        })()
+        : input;
+
+    if (!parsed || typeof parsed !== "object") {
+        throw new Error("Não foi possível desserializar o grafo: snapshot inválido.");
+    }
+
+    const snapshot = parsed as Partial<GraphSerializedState>;
+    if (!Array.isArray(snapshot.nodes) || !Array.isArray(snapshot.links)) {
+        throw new Error("Não foi possível desserializar o grafo: o snapshot precisa conter arrays nodes e links.");
+    }
+
+    return {
+        nodes: snapshot.nodes.map((node, index) => normalizeNodeDefinition(node, index)),
+        links: snapshot.links.map((link, index) => normalizeLinkDefinition(link, index)),
+    };
+}
+
+function serializeNodeDefinition(node: NodeDefinition, runtimeState?: GraphNodeRuntimeState): NodeDefinition {
+    return {
+        id: node.id,
+        nodeType: node.nodeType,
+        position: { ...(runtimeState?.position ?? node.position) },
+        data: cloneSerializableValue(runtimeState?.data ?? node.data),
+    };
+}
+
+function serializeLinkDefinition(link: LinkDefinition): LinkDefinition {
+    return {
+        id: link.id,
+        connectionType: link.connectionType,
+        from: { ...link.from },
+        to: { ...link.to },
+        data: cloneSerializableValue(link.data),
+    };
 }
 
 
@@ -389,6 +531,11 @@ function GraphHandle({
     setLinkDefs: React.Dispatch<React.SetStateAction<LinkDefinition[]>>;
 }) {
     const { connect, disconnect, connections } = useContext(ConnectionContext);
+    const nodeDefsRef = useRef(nodeDefs);
+    const linkDefsRef = useRef(linkDefs);
+
+    nodeDefsRef.current = nodeDefs;
+    linkDefsRef.current = linkDefs;
 
     const buildSnapshot = useCallback((): GraphSnapshot => {
         const nodes: GraphLayoutNode[] = nodeDefs.map(def => {
@@ -415,6 +562,35 @@ function GraphHandle({
             bounds: getSnapshotBounds(nodes),
         };
     }, [linkDefs, nodeDefs, nodeStateRef]);
+
+    const serialize = useCallback((): GraphSerializedState => {
+        return {
+            nodes: nodeDefsRef.current.map(node => serializeNodeDefinition(node, nodeStateRef.current.get(node.id))),
+            links: linkDefsRef.current.map(serializeLinkDefinition),
+        };
+    }, [linkDefsRef, nodeDefsRef, nodeStateRef]);
+
+    const deserialize = useCallback((input: GraphSerializedState | string) => {
+        const snapshot = normalizeSerializedGraph(input);
+        const previousStates = nodeStateRef.current;
+
+        nodeDefsRef.current = snapshot.nodes;
+        linkDefsRef.current = snapshot.links;
+        nodeStateRef.current = new Map(snapshot.nodes.map(node => {
+            const current = previousStates.get(node.id);
+            return [node.id, {
+                id: node.id,
+                position: { ...node.position },
+                width: current?.width ?? 1,
+                height: current?.height ?? 1,
+                data: cloneSerializableValue(node.data),
+            } satisfies GraphNodeRuntimeState];
+        }));
+        linkStateRef.current = new Map();
+
+        setNodeDefs(snapshot.nodes);
+        setLinkDefs(snapshot.links);
+    }, [linkStateRef, linkDefsRef, nodeDefsRef, nodeStateRef, setLinkDefs, setNodeDefs]);
 
     const applyPositions = useCallback((result: GraphLayoutResult) => {
         for (const item of result.positions) {
@@ -519,25 +695,43 @@ function GraphHandle({
 
     // Ref que sempre aponta para as closures mais recentes
     const implRef = useRef<GraphApiBindings>({
-        addNode: () => {},
-        removeNode: () => {},
-        addLink: () => {},
-        removeLink: () => {},
-        connect: () => {},
-        disconnect: () => {},
+        addNode: () => { },
+        removeNode: () => { },
+        addLink: () => { },
+        removeLink: () => { },
+        connect: () => { },
+        disconnect: () => { },
         getConnections: () => [],
         getNodeStates: () => [],
         getLinkStates: () => [],
         centralize: () => Promise.resolve({} as Viewbox),
         applyLayout: () => Promise.resolve({} as GraphLayoutResult),
+        serialize: () => ({ nodes: [], links: [] }),
+        deserialize: () => { },
     });
 
     // Atualiza a ref a cada render para capturar closures atualizadas
     implRef.current = {
-        addNode: (node: NodeDefinition) => setNodeDefs(prev => [...prev, node]),
-        removeNode: (id: string) => setNodeDefs(prev => prev.filter(n => n.id !== id)),
-        addLink: (link: LinkDefinition) => setLinkDefs(prev => [...prev, link]),
-        removeLink: (id: string) => setLinkDefs(prev => prev.filter(l => l.id !== id)),
+        addNode: (node: NodeDefinition) => {
+            const next = [...nodeDefsRef.current, node];
+            nodeDefsRef.current = next;
+            setNodeDefs(next);
+        },
+        removeNode: (id: string) => {
+            const next = nodeDefsRef.current.filter(n => n.id !== id);
+            nodeDefsRef.current = next;
+            setNodeDefs(next);
+        },
+        addLink: (link: LinkDefinition) => {
+            const next = [...linkDefsRef.current, link];
+            linkDefsRef.current = next;
+            setLinkDefs(next);
+        },
+        removeLink: (id: string) => {
+            const next = linkDefsRef.current.filter(l => l.id !== id);
+            linkDefsRef.current = next;
+            setLinkDefs(next);
+        },
         connect,
         disconnect,
         getConnections: () => connections,
@@ -545,6 +739,8 @@ function GraphHandle({
         getLinkStates: () => Array.from(linkStateRef.current.values()),
         centralize,
         applyLayout,
+        serialize,
+        deserialize,
     };
 
     // Bind único — delega via implRef para closures sempre atualizadas
@@ -562,6 +758,8 @@ function GraphHandle({
             getLinkStates: () => implRef.current.getLinkStates(),
             centralize: (...args) => implRef.current.centralize(...args),
             applyLayout: (...args) => implRef.current.applyLayout(...args),
+            serialize: () => implRef.current.serialize(),
+            deserialize: (...args) => implRef.current.deserialize(...args),
         });
         return () => internal._unbind();
     }, [api]);
