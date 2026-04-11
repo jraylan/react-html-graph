@@ -2,7 +2,6 @@ import React, {
     useCallback,
     useContext,
     useEffect,
-    useImperativeHandle,
     useMemo,
     useRef,
     useState,
@@ -23,13 +22,17 @@ import {
     GraphLayoutResult,
     GraphLinkRuntimeState,
     GraphNodeRuntimeState,
+    LinkInfoContextValue,
 } from "../types";
+import { GraphApiInternal, GraphApiBindings } from "../hooks/use-graph-api";
 import { calculateFitView } from "../calculations";
 import { GraphContext } from "../context/graph-context";
 import { ErrorContext } from "../context/error-context";
 import { ConnectionContext } from "../context/connection-context";
 import { GraphRootContext } from "../context/graph-root-context";
 import ConnectionProvider from "../providers/connection-provider";
+import NodeRegistryProvider from "../providers/node-registry-provider";
+import GraphEventBusProvider from "../providers/graph-event-bus-provider";
 import { GRAPH_LAYOUT_EXECUTORS } from "../layouts";
 import GraphObject from "../nodes/base";
 import GraphLink from "../link/base";
@@ -81,14 +84,14 @@ function getSnapshotBounds(nodes: GraphLayoutNode[]) {
 
 /**
  * Componente Graph que orquestra o contexto do grafo, providers e o viewbox.
- * Recebe chamadas imperativas via ref (GraphApi) expostas por GraphHandle.
+ * Recebe a API estável criada por useGraphApi via prop `api`.
  *
  * @param props Propriedades do componente Graph
  * @returns JSX.Element
  */
-export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
+export default function Graph({ api, mode = "edit", onError }: GraphProps) {
     const rootRef = useRef<HTMLElement>(null)
-    const graphApiRef = useRef<GraphApi>(null);
+    const internal = api as GraphApiInternal;
     const [nodeDefs, setNodeDefs] = useState<NodeDefinition[]>([]);
     const [linkDefs, setLinkDefs] = useState<LinkDefinition[]>([]);
     const [viewbox, setViewBoxState] = useState<Viewbox>({
@@ -114,52 +117,62 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
         linkStateRef.current.set(state.id, state);
     }, []);
 
+    // Atualiza apenas a ref de estado (sem setNodeDefs) para evitar re-render de todos os nós.
     const handleNodeMove = useCallback((nodeId: string, newPosition: GraphNodeRuntimeState["position"]) => {
-        setNodeDefs(prev => {
-            let changed = false;
-            const next = prev.map(def => {
-                if (def.id !== nodeId) return def;
-                if (
-                    def.position.x === newPosition.x &&
-                    def.position.y === newPosition.y &&
-                    def.position.z === newPosition.z
-                ) {
-                    return def;
-                }
-                changed = true;
-                return {
-                    ...def,
-                    position: newPosition,
-                };
-            });
-            return changed ? next : prev;
+        const current = nodeStateRef.current.get(nodeId);
+        nodeStateRef.current.set(nodeId, {
+            id: nodeId,
+            position: newPosition,
+            width: current?.width ?? 1,
+            height: current?.height ?? 1,
+            data: current?.data,
         });
-    }, []);
+    }, [nodeStateRef]);
 
-    // Converte definicoes em React elements para GraphContext
+    // Resolve nodeType do registro para obter portas e template
     const nodes = useMemo(() =>
-        nodeDefs.map(def => (
-            <GraphObject
-                key={def.id}
-                id={def.id}
-                position={def.position}
-                ports={def.ports}
-                data={def.data}
-                initialPosition={def.position}
-                onMove={(newPosition) => handleNodeMove(def.id, newPosition)}
-                onStateChange={handleNodeStateChange}
-            >
-                {def.template}
-            </GraphObject>
-        )),
-        [handleNodeMove, handleNodeStateChange, nodeDefs]
+        nodeDefs.map(def => {
+            const nodeType = internal._nodeTypeRegistry.get(def.nodeType);
+            const template = nodeType?.template ?? internal._defaultNodeTemplate;
+            const ports = nodeType?.ports ?? [];
+
+            if (!template) return null;
+
+            return (
+                <GraphObject
+                    key={def.id}
+                    id={def.id}
+                    position={def.position}
+                    ports={ports}
+                    data={def.data}
+                    initialPosition={def.position}
+                    onMove={(newPosition) => handleNodeMove(def.id, newPosition)}
+                    onStateChange={handleNodeStateChange}
+                >
+                    {template}
+                </GraphObject>
+            );
+        }),
+        [handleNodeMove, handleNodeStateChange, nodeDefs, internal._nodeTypeRegistry, internal._defaultNodeTemplate]
     );
 
+    // Resolve template do registro por connectionType
     const links = useMemo(() =>
-        linkDefs.map(def => (
-            <GraphLink key={def.id} {...def} onStateChange={handleLinkStateChange} />
-        )),
-        [handleLinkStateChange, linkDefs]
+        linkDefs.map(def => {
+            const template: ((props: LinkInfoContextValue) => React.ReactNode) | undefined =
+                (def.connectionType
+                    ? internal._linkTemplateRegistry.get(def.connectionType)
+                    : undefined)
+                ?? internal._defaultLinkTemplate
+                ?? undefined;
+
+            if (!template) return null;
+
+            return (
+                <GraphLink key={def.id} id={def.id} from={def.from} to={def.to} data={def.data} template={template} onStateChange={handleLinkStateChange} />
+            );
+        }),
+        [handleLinkStateChange, linkDefs, internal._linkTemplateRegistry, internal._defaultLinkTemplate]
     );
 
     const panRef = useRef<PanState>({
@@ -309,30 +322,33 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
                 mode,
             }}>
                 <GraphRootContext.Provider value={rootRef}>
-                    <ConnectionProvider graphApiRef={graphApiRef}>
-                        <GraphHandle
-                            ref={ref}
-                            graphApiRef={graphApiRef}
-                            rootRef={rootRef}
-                            nodeDefs={nodeDefs}
-                            linkDefs={linkDefs}
-                            nodeStateRef={nodeStateRef}
-                            linkStateRef={linkStateRef}
-                            mode={mode}
-                            viewboxRef={viewboxRef}
-                            setViewBox={setViewBox}
-                            setNodeDefs={setNodeDefs}
-                            setLinkDefs={setLinkDefs}
-                        />
-                        <graph-root
-                            ref={rootRef}
-                            onMouseDown={handleMouseDown}
-                            onMouseUp={handleMouseUp}
-                            onMouseMove={handleMouseMove}
-                        >
-                            <ViewBox />
-                        </graph-root>
-                    </ConnectionProvider>
+                    <NodeRegistryProvider>
+                        <GraphEventBusProvider>
+                            <ConnectionProvider graphApi={api}>
+                                <GraphHandle
+                                    api={api}
+                                    rootRef={rootRef}
+                                    nodeDefs={nodeDefs}
+                                    linkDefs={linkDefs}
+                                    nodeStateRef={nodeStateRef}
+                                    linkStateRef={linkStateRef}
+                                    mode={mode}
+                                    viewboxRef={viewboxRef}
+                                    setViewBox={setViewBox}
+                                    setNodeDefs={setNodeDefs}
+                                    setLinkDefs={setLinkDefs}
+                                />
+                                <graph-root
+                                    ref={rootRef}
+                                    onMouseDown={handleMouseDown}
+                                    onMouseUp={handleMouseUp}
+                                    onMouseMove={handleMouseMove}
+                                >
+                                    <ViewBox />
+                                </graph-root>
+                            </ConnectionProvider>
+                        </GraphEventBusProvider>
+                    </NodeRegistryProvider>
                 </GraphRootContext.Provider>
             </GraphContext.Provider>
         </ErrorContext.Provider>
@@ -342,15 +358,13 @@ export default function Graph({ ref, mode = "edit", onError }: GraphProps) {
 
 
 /**
- * Componente auxiliar que implementa a API imperativa do Graph (GraphApi)
- * e a expõe através da ref fornecida pelo componente pai.
+ * Componente auxiliar que conecta a API imperativa do Graph (GraphApi)
+ * ao objeto estável criado por useGraphApi via _bind/_unbind.
  *
- * Esta função não renderiza nada (retorna null) e serve apenas para vincular
- * handlers/estado ao objeto de API.
+ * Não renderiza nada (retorna null).
  */
 function GraphHandle({
-    ref,
-    graphApiRef,
+    api,
     rootRef,
     nodeDefs,
     linkDefs,
@@ -362,8 +376,7 @@ function GraphHandle({
     setNodeDefs,
     setLinkDefs,
 }: {
-    ref?: React.Ref<GraphApi>;
-    graphApiRef: React.RefObject<GraphApi | null>;
+    api: GraphApi;
     rootRef: React.RefObject<HTMLElement | null>;
     nodeDefs: NodeDefinition[];
     linkDefs: LinkDefinition[];
@@ -504,23 +517,54 @@ function GraphHandle({
         return result;
     }, [applyPositions, buildSnapshot, mode, rootRef, viewboxRef]);
 
-    useImperativeHandle(ref, () => {
-        const api: GraphApi = {
-            addNode: (node: NodeDefinition) => setNodeDefs(prev => [...prev, node]),
-            removeNode: (id: string) => setNodeDefs(prev => prev.filter(n => n.id !== id)),
-            addLink: (link: LinkDefinition) => setLinkDefs(prev => [...prev, link]),
-            removeLink: (id: string) => setLinkDefs(prev => prev.filter(l => l.id !== id)),
-            connect,
-            disconnect,
-            getConnections: () => connections,
-            getNodeStates: () => Array.from(nodeStateRef.current.values()),
-            getLinkStates: () => Array.from(linkStateRef.current.values()),
-            centralize,
-            applyLayout,
-        };
-        (graphApiRef as React.MutableRefObject<GraphApi | null>).current = api;
-        return api;
-    }, [applyLayout, centralize, connect, connections, disconnect, graphApiRef, linkStateRef, nodeStateRef, setLinkDefs, setNodeDefs]);
+    // Ref que sempre aponta para as closures mais recentes
+    const implRef = useRef<GraphApiBindings>({
+        addNode: () => {},
+        removeNode: () => {},
+        addLink: () => {},
+        removeLink: () => {},
+        connect: () => {},
+        disconnect: () => {},
+        getConnections: () => [],
+        getNodeStates: () => [],
+        getLinkStates: () => [],
+        centralize: () => Promise.resolve({} as Viewbox),
+        applyLayout: () => Promise.resolve({} as GraphLayoutResult),
+    });
+
+    // Atualiza a ref a cada render para capturar closures atualizadas
+    implRef.current = {
+        addNode: (node: NodeDefinition) => setNodeDefs(prev => [...prev, node]),
+        removeNode: (id: string) => setNodeDefs(prev => prev.filter(n => n.id !== id)),
+        addLink: (link: LinkDefinition) => setLinkDefs(prev => [...prev, link]),
+        removeLink: (id: string) => setLinkDefs(prev => prev.filter(l => l.id !== id)),
+        connect,
+        disconnect,
+        getConnections: () => connections,
+        getNodeStates: () => Array.from(nodeStateRef.current.values()),
+        getLinkStates: () => Array.from(linkStateRef.current.values()),
+        centralize,
+        applyLayout,
+    };
+
+    // Bind único — delega via implRef para closures sempre atualizadas
+    useEffect(() => {
+        const internal = api as GraphApiInternal;
+        internal._bind({
+            addNode: (...args) => implRef.current.addNode(...args),
+            removeNode: (...args) => implRef.current.removeNode(...args),
+            addLink: (...args) => implRef.current.addLink(...args),
+            removeLink: (...args) => implRef.current.removeLink(...args),
+            connect: (...args) => implRef.current.connect(...args),
+            disconnect: (...args) => implRef.current.disconnect(...args),
+            getConnections: () => implRef.current.getConnections(),
+            getNodeStates: () => implRef.current.getNodeStates(),
+            getLinkStates: () => implRef.current.getLinkStates(),
+            centralize: (...args) => implRef.current.centralize(...args),
+            applyLayout: (...args) => implRef.current.applyLayout(...args),
+        });
+        return () => internal._unbind();
+    }, [api]);
 
     return null;
 }

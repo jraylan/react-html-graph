@@ -1,26 +1,22 @@
 import { useRef, useState, useCallback, useEffect, useMemo, memo } from "react";
 import useGraphMode from "../hooks/graph-mode";
-import { GraphNodeRuntimeState, GraphObjectProps, Point3D, PortsByLocation } from "../types";
+import { GraphNodeRuntimeState, GraphObjectProps, NodeEventEmitter, Point3D, PortsByLocation } from "../types";
 import GraphPort from "../ports/base";
 import useGetZoom from "../hooks/get-zoom";
-
-type MoveState = {
-    moving: boolean,
-    movePointStart: { x: number, y: number },
-    startPos: { x: number, y: number }
-    currentPos: { x: number, y: number }
-}
-
-
+import { NodeEventProvider } from "../providers/node-event-context";
+import { useMoveBehaviour } from "../behaviour/move-behaviour";
+import useNodeRegistry from "../hooks/node-registry";
+import useGraphEventBus from "../hooks/graph-event-bus";
 
 /**
  * Componente que representa um objeto/nó do grafo. Gerencia posicionamento,
  * arraste (drag) e exposição das portas no local correto.
+ * Registra-se no NodeRegistry e emite eventos via GraphEventBus.
  *
  * @param props GraphObjectProps
  * @returns JSX.Element
  */
-const MemoizedGraphObject = memo(function GraphObject({
+const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     children,
     id,
     ports,
@@ -29,74 +25,59 @@ const MemoizedGraphObject = memo(function GraphObject({
     initialPosition,
     onMove,
     onStateChange,
-}: GraphObjectProps) {
-    const ref = useRef<HTMLDivElement>(null)
+}: GraphObjectProps<T>) {
+    const ref = useRef<HTMLDivElement>(null);
     const getZoom = useGetZoom();
     const mode = useGraphMode();
+    const registry = useNodeRegistry();
+    const eventBus = useGraphEventBus();
+    const [eventEmitter, setEmitter] = useState<NodeEventEmitter | null>(null);
     const [position, setPosition] = useState<Point3D>(() => controlledPosition ?? initialPosition ?? { x: 0, y: 0, z: 0 });
     const effectivePosition = controlledPosition ?? position;
-    const moveRef = useRef<MoveState>({
-        moving: false,
-        movePointStart: { x: 0, y: 0 },
-        startPos: { x: 0, y: 0 },
-        currentPos: { x: 0, y: 0 },
-    })
+
+    // Registra/desregistra o elemento DOM do nó no NodeRegistry
+    useEffect(() => {
+        if (!ref.current) return;
+        registry.registerNodeElement(id, ref.current);
+        return () => registry.unregisterNodeElement(id);
+    }, [id, registry]);
 
     const reportState = useCallback((nextPosition: Point3D) => {
-        if (!ref.current || !onStateChange) return;
-        const state: GraphNodeRuntimeState = {
+        if (!ref.current) return;
+        const state: GraphNodeRuntimeState<T> = {
             id,
             position: nextPosition,
             width: Math.max(1, ref.current.offsetWidth),
             height: Math.max(1, ref.current.offsetHeight),
             data,
         };
-        onStateChange(state);
-    }, [data, id, onStateChange]);
+        // Atualiza o registry centralizado
+        registry.updateNodeState(state);
+        // Emite evento de movimento no bus centralizado
+        eventBus.emit(id, "move", { position: nextPosition });
+        // Reporta via callback do Graph
+        onStateChange?.(state);
+    }, [data, id, onStateChange, registry, eventBus]);
 
-    const handleMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        if (e.button !== 0 || mode === "readonly") return;
-        e.preventDefault();
-        moveRef.current.moving = true
-        moveRef.current.movePointStart.x = e.clientX
-        moveRef.current.movePointStart.y = e.clientY
-        moveRef.current.startPos = { x: effectivePosition.x, y: effectivePosition.y }
-        moveRef.current.currentPos = { x: effectivePosition.x, y: effectivePosition.y }
-    }, [effectivePosition.x, effectivePosition.y, mode])
+    const handleEmitterReady = useCallback((emitFn: NodeEventEmitter) => {
+        setEmitter(() => emitFn);
+    }, []);
 
-    const stopMoving = useCallback((e: MouseEvent | React.MouseEvent) => {
-        if (e.button === 0 && moveRef.current.moving) {
-            moveRef.current.moving = false
-            const nextPosition = {
-                x: moveRef.current.currentPos.x,
-                y: moveRef.current.currentPos.y,
-                z: effectivePosition.z,
-            };
-            setPosition(nextPosition);
-            onMove?.(nextPosition);
-        }
-    }, [effectivePosition.z, onMove])
+    // Callback chamado ao finalizar o arraste
+    const handleMoveEnd = useCallback((nextPosition: Point3D) => {
+        setPosition(nextPosition);
+        onMove?.(nextPosition);
+    }, [onMove]);
 
-    const handleMouseMove = useCallback((e: MouseEvent) => {
-        if (!ref.current || !moveRef.current.moving) return;
-        const zoom = getZoom();
-        const dx = (e.clientX - moveRef.current.movePointStart.x) / zoom;
-        const dy = (e.clientY - moveRef.current.movePointStart.y) / zoom;
-        const newX = moveRef.current.startPos.x + dx;
-        const newY = moveRef.current.startPos.y + dy;
-        const nextPosition = {
-            x: newX,
-            y: newY,
-            z: effectivePosition.z,
-        };
-        moveRef.current.currentPos.x = newX;
-        moveRef.current.currentPos.y = newY;
-        ref.current.style.left = `${newX.toFixed(0)}px`;
-        ref.current.style.top = `${newY.toFixed(0)}px`;
-        reportState(nextPosition);
-
-    }, [effectivePosition.z, getZoom, reportState])
-
+    const { handleMouseDown, handleMouseUp, moveRef } = useMoveBehaviour({
+        elementRef: ref,
+        getZoom,
+        mode,
+        effectivePosition,
+        onMoveEnd: handleMoveEnd,
+        onMoving: reportState,
+        eventEmitter,
+    });
 
     useEffect(() => {
         if (!ref.current) return;
@@ -104,27 +85,7 @@ const MemoizedGraphObject = memo(function GraphObject({
         ref.current.style.top = `${effectivePosition.y.toFixed(0)}px`;
         ref.current.style.zIndex = effectivePosition.z.toFixed(0);
         reportState(effectivePosition);
-    }, [effectivePosition, reportState])
-
-
-    useEffect(() => {
-        if (mode === "readonly") return;
-
-        const handlerUp = (e: MouseEvent) => {
-            stopMoving(e);
-        }
-        const handleMove = (e: MouseEvent) => {
-            handleMouseMove(e)
-        }
-        document.addEventListener('mouseup', handlerUp)
-        document.addEventListener('mousemove', handleMove)
-
-        return () => {
-            document.removeEventListener('mouseup', handlerUp)
-            document.removeEventListener('mousemove', handleMove)
-        }
-
-    }, [stopMoving, handleMouseMove, mode])
+    }, [effectivePosition, reportState]);
 
     const portsByLocation = useMemo<PortsByLocation>(() => {
         const result: PortsByLocation = {
@@ -135,7 +96,7 @@ const MemoizedGraphObject = memo(function GraphObject({
             const element = (
                 <GraphPort
                     key={port.id}
-                    type={port.type}
+                    connectionType={port.connectionType}
                     id={port.id}
                     nodeId={id}
                     direction={port.direction}
@@ -157,13 +118,12 @@ const MemoizedGraphObject = memo(function GraphObject({
         return result;
     }, [ports, id]);
 
-
     useEffect(() => {
         if (controlledPosition) {
             setPosition({
                 x: controlledPosition.x,
                 y: controlledPosition.y,
-                z: controlledPosition.z ?? 0
+                z: controlledPosition.z ?? 0,
             });
             return;
         }
@@ -171,7 +131,7 @@ const MemoizedGraphObject = memo(function GraphObject({
             setPosition({
                 x: initialPosition.x,
                 y: initialPosition.y,
-                z: initialPosition.z ?? 0
+                z: initialPosition.z ?? 0,
             });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -191,17 +151,27 @@ const MemoizedGraphObject = memo(function GraphObject({
         });
         observer.observe(ref.current);
         return () => observer.disconnect();
-    }, [effectivePosition, onStateChange, reportState]);
+    }, [effectivePosition, moveRef, onStateChange, reportState]);
+
+    // Emite evento dataChange no bus centralizado e no NodeEventProvider local
+    useEffect(() => {
+        eventBus.emit(id, "dataChange", { data });
+        if (eventEmitter) {
+            eventEmitter("dataChange", { data });
+        }
+    }, [eventBus, eventEmitter, data, id]);
 
     return <node-graph-object
         key={id}
         ref={ref}
         onMouseDown={handleMouseDown}
-        onMouseUp={stopMoving}
+        onMouseUp={handleMouseUp}
         node-id={id}
     >
-        {children({ id, ports: portsByLocation, data })}
-    </node-graph-object>
-})
+        <NodeEventProvider nodeId={id} emitter={handleEmitterReady} >
+            {children({ id, ports: portsByLocation, data })}
+        </NodeEventProvider>
+    </node-graph-object>;
+});
 
 export default MemoizedGraphObject;

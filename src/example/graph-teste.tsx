@@ -3,10 +3,16 @@ import Graph from "../graph";
 import {
     GraphApplyLayoutInput,
     GraphApi,
+    LinkDefinition,
     NodeObjectTemplateProps,
     NodeDefinition,
     PortRenderProps,
+    PortDragEndEvent,
 } from "../types";
+import BidirectionalPath from "../paths/bidirectional-path";
+import useLinkInfo from "../hooks/link-info";
+import useGraphApi from "../hooks/use-graph-api";
+
 
 const MOCK_DEVICES = [
     { id: 'pe01', label: '01 PE01-BSB-CORE', type: 'router', model: 'Huawei_router', ip: '10.99.99.1', status: 'online', uptime: '287d 4h', x: 480, y: 300 },
@@ -25,17 +31,17 @@ const MOCK_DEVICES = [
 ];
 
 const MOCK_LINKS = [
-    { s: 'pe01', t: 'pna', bw: '10G', usage: 55 },
-    { s: 'pe01', t: 'l3', bw: '10G', usage: 40 },
-    { s: 'pe01', t: 'pe05', bw: '1G', usage: 72 },
-    { s: 'pe02', t: 'pe06', bw: '1G', usage: 30 },
-    { s: 'pe02', t: 'pe07', bw: '1G', usage: 60 },
-    { s: 'pe01', t: 'pe02', bw: '1G', usage: 45 },
-    { s: 'pe01', t: 'pe08', bw: '1G', usage: 20 },
-    { s: 'pe01', t: 'pe03', bw: '1G', usage: 35 },
-    { s: 'pe03', t: 'pe04', bw: '1G', usage: 0 },
-    { s: 'pe04', t: 'pe09', bw: '1G', usage: 50 },
-    { s: 'pe01', t: 'pe10', bw: '1G', usage: 25 },
+    { s: 'pe01', t: 'pna', type: "ftth", bw: '10G', usage: 55, latency: 1 },
+    { s: 'pe01', t: 'l3', type: "ftth", bw: '10G', usage: 40, latency: 12 },
+    { s: 'pe01', t: 'pe05', type: "ether", bw: '1G', usage: 72, latency: 13 },
+    { s: 'pe02', t: 'pe06', type: "ether", bw: '1G', usage: 30, latency: 43 },
+    { s: 'pe02', t: 'pe07', type: "ether", bw: '1G', usage: 60, latency: 123 },
+    { s: 'pe01', t: 'pe02', type: "ether", bw: '1G', usage: 45, latency: 223 },
+    { s: 'pe01', t: 'pe08', type: "ether", bw: '1G', usage: 20, latency: 14 },
+    { s: 'pe01', t: 'pe03', type: "ether", bw: '1G', usage: 35, latency: 33 },
+    { s: 'pe03', t: 'pe04', type: "ether", bw: '1G', usage: 0, latency: 9999 },
+    { s: 'pe04', t: 'pe09', type: "ether", bw: '1G', usage: 50, latency: 9999 },
+    { s: 'pe01', t: 'pe10', type: "ether", bw: '1G', usage: 25, latency: 123 },
 ];
 
 const LAYOUTS: Array<{ label: string; algorithm: GraphApplyLayoutInput["algorithm"] }> = [
@@ -156,21 +162,34 @@ const COLORS = {
 }
 
 function NodePort(props: PortRenderProps) {
+    const isActive = props.isDragging || props.canDrop;
 
-    return <></>
+    return (
+        <div
+            style={{
+                width: 12,
+                height: 12,
+                borderRadius: "50%",
+                backgroundColor: isActive ? "#00ff88" : "#444",
+                border: `2px solid ${props.canDrop ? "#00ff88" : props.isDragging ? "#ffaa00" : "#666"}`,
+                cursor: props.canDrag ? "crosshair" : "default",
+                transition: "background-color 0.15s, border-color 0.15s",
+            }}
+        />
+    );
 }
 
 function NodeTemplate({ id, ports, data }: NodeObjectTemplateProps<typeof MOCK_DEVICES[number]>) {
+    if (!data) return null;
     const colors = COLORS[data.status as keyof typeof COLORS] || COLORS.default;
     return <div style={{ position: "relative" }}>
-        <div style={{ position: "absolute", left: "50%", top: "50%" }}>
+        <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 10 }}>
             {ports.all}
         </div>
         <div
             style={{ borderColor: colors.border, backgroundColor: colors.bg }}
         >
-            <div
-            >
+            <div>
                 <div>
                     <div
                         style={{ backgroundColor: colors.badgeBg, color: colors.badgeClr }}
@@ -202,78 +221,191 @@ function NodeTemplate({ id, ports, data }: NodeObjectTemplateProps<typeof MOCK_D
 
 
 
+/** Contador para gerar IDs únicos para links criados via drag */
+let userLinkCounter = 0;
+
+/**
+ * Callback de onDragEnd que cria um link entre dois nós quando o arraste
+ * termina sobre uma porta válida. Usado para testar conexões interativas.
+ */
+async function handlePortDragEnd(api: GraphApi, event: PortDragEndEvent) {
+    if (!event.targetNodeId || !event.targetPortName) return;
+
+    const linkId = `user-link-${++userLinkCounter}`;
+    api.addLink({
+        id: linkId,
+        connectionType: "ether",
+        from: { node: event.sourceNodeId, port: event.sourcePortName },
+        to: { node: event.targetNodeId, port: event.targetPortName },
+        data: { s: event.sourceNodeId, t: event.targetNodeId, bw: '1G', usage: 10, latency: 50 },
+    });
+    console.log(`[Conexão] ${event.sourceNodeId}:${event.sourcePortName} -> ${event.targetNodeId}:${event.targetPortName} (${linkId})`);
+}
+
 function createNode(data: typeof MOCK_DEVICES[number]): NodeDefinition {
     const { id, x, y } = data;
     return ({
         id: id,
+        nodeType: data.type,
         position: { x: x, y: y, z: 0 },
         data,
-        ports: [
-            {
-                id: "port",
-                type: "data",
-                direction: "bidirectional",
-                location: { x: 0, y: 0 },
-                children: NodePort,
-            },
-        ],
-        template: NodeTemplate
     });
 }
 
-function createLink(data: typeof MOCK_LINKS[number]) {
-    const color = data.usage > 80 ? "#ff3333" : data.usage > 50 ? "#ffaa00" : "#c7c700";
-    const bw = parseInt(data.bw.replace("G", "000000000").replace("M", "000000"));
-    const duration = Math.max(1, Math.min(10, Math.round((bw * data.usage / 100) / 100000000)));
+function lerp(start: number, end: number, t: number) {
+    return start * (1 - t) + end * t;
+}
+
+function calcularDuracaoAnimacao(ping: number) {
+    // Evita divisão por zero e pings negativos
+    let p = Math.max(0, ping);
+
+    // Calcula o divisor baseado no crescimento logarítmico
+    let divisor = 0.22 * Math.log(p + 1) + 0.25;
+
+    // Duração base = 1.0 (ou o tempo padrão da sua animação)
+    let duracao = divisor;
+
+    // CLAMP: Não permite que a animação seja mais rápida que 0.4s
+    // nem mais lenta que 1.0s
+    return Math.min(duracao, 2.0);
+}
+function LinkPath() {
+
+    const { data } = useLinkInfo<typeof MOCK_LINKS[number]>()
+
+    const offline = MOCK_DEVICES.some(d => (d.id === data.s || d.id === data.t) && d.status === "offline");
+    const color =
+        offline
+            ? "#ff3333"
+            : data.usage > 66 ? "#ff3333" : data.usage > 33 ? "#c7c700" : "#00ff88";
+    const bw = parseInt(data.bw.replace("G", "000000000").replace("M", "000000").replace("K", "000"));
+    const duration =
+        offline
+            ? 0
+            : calcularDuracaoAnimacao(data.latency);
+    const width =
+        offline
+            ? 1
+            : lerp(1, 2, bw / 10000000000);
+
+
+    return (
+
+        <BidirectionalPath
+            width={width}
+            spacing={2 * width}
+            forwardColor={color}
+            reverseColor={color}
+            forwardDuration={duration}
+            reverseDuration={duration}
+            labels={[
+                { text: data.latency.toFixed(0) + `ms (${duration.toFixed(2)}s)`, position: 0, color: "#fff", fontSize: 14 },
+                { text: data.bw, position: -0.2, color: "#fff", fontSize: 14, textAnchor: "forward" },
+                { text: data.usage + '%', position: 0.2, color: "#fff", fontSize: 14, textAnchor: "reverse" },
+            ]}
+        />
+    )
+}
+
+function createLink(data: typeof MOCK_LINKS[number]): LinkDefinition {
 
     return {
         id: `link-${data.s}-${data.t}`,
+        connectionType: data.type,
         from: {
             node: data.s,
-            port: "port"
+            port: "port",
         },
         to: {
             node: data.t,
-            port: "port"
+            port: "port",
         },
-        labels: [
-            { text: data.bw, position: -0.5, color: "#fff", fontSize: 14 },
-            { text: data.usage + '%', position: 0.5, color: "#fff", fontSize: 14 },
-        ],
-        width: 1,
-        spacing: 2,
-        forwardColor: color,
-        reverseColor: color,
-        forwardDuration: duration,
-        reverseDuration: duration,
-    }
-
+        data,
+    };
 }
 
 export default function GraphTest() {
-    const apiRef = useRef<GraphApi>(null);
     const fpsRef = useRef<HTMLSpanElement>(null);
     const fpsCountRef = useRef<number>(0);
     const lastTimeRef = useRef<number>(0);
     const [stateSummary, setStateSummary] = useState("Nós: 0 | Links: 0");
 
+    const graphApi = useGraphApi({
+        onReady: (api) => {
+            api.setDefaultNodeTemplate(NodeTemplate);
+            api.registerNodeType(
+                "router",
+                {
+                    ports: [
+                        {
+                            id: "port",
+                            connectionType: "data",
+                            direction: "bidirectional",
+                            location: { x: 0, y: 0 },
+                            children: NodePort,
+                            onDragEnd: handlePortDragEnd,
+                        },
+                    ],
+                }
+            );
+            api.registerNodeType(
+                "switch",
+                {
+                    ports: [
+                        {
+                            id: "port",
+                            connectionType: "data",
+                            direction: "bidirectional",
+                            location: { x: 0, y: 0 },
+                            children: NodePort,
+                            onDragEnd: handlePortDragEnd,
+                        },
+                    ],
+                    template: NodeTemplate // Optional se tiver defaultNodeTemplate
+                }
+            );
+            api.registerNodeType(
+                "cloud",
+                {
+                    ports: [
+                        {
+                            id: "port",
+                            connectionType: "data",
+                            direction: "bidirectional",
+                            location: { x: 0, y: 0 },
+                            children: NodePort,
+                            onDragEnd: handlePortDragEnd,
+                        },
+                    ],
+                    template: NodeTemplate
+                }
+            );
+            api.setDefaultLinkTemplate(LinkPath);
+            api.registerLinkTemplate("ftth", () => <LinkPath />);
+            api.registerLinkTemplate("ether", () => <LinkPath />);
+        },
+        // defaultNodeTemplate: (props) => <NodeTemplate {...props} />, // Optional
+        // defaultLinkTemplate: (props) => <LinkPath {...props} />, // Optional
+    });
+
     const updateStateSummary = useCallback(() => {
-        const api = apiRef.current;
+        const api = graphApi;
         if (!api) return;
         const nodes = api.getNodeStates();
         const links = api.getLinkStates();
         setStateSummary(`Nós: ${nodes.length} | Links: ${links.length}`);
-    }, []);
+    }, [graphApi]);
 
     const handleCentralize = useCallback(async () => {
-        const api = apiRef.current;
+        const api = graphApi;
         if (!api) return;
         await api.centralize({ padding: 48 });
         updateStateSummary();
-    }, [updateStateSummary]);
+    }, [graphApi, updateStateSummary]);
 
     const handleApplyLayout = useCallback(async (algorithm: GraphApplyLayoutInput["algorithm"]) => {
-        const api = apiRef.current;
+        const api = graphApi;
         if (!api) return;
         await api.applyLayout({
             algorithm,
@@ -281,11 +413,11 @@ export default function GraphTest() {
         });
         await api.centralize({ padding: 40 });
         updateStateSummary();
-    }, [updateStateSummary]);
+    }, [graphApi, updateStateSummary]);
 
     useEffect(() => {
         const timeout = window.setTimeout(() => {
-            const api = apiRef.current;
+            const api = graphApi;
             if (api) {
                 MOCK_DEVICES.forEach(obj => {
                     api.addNode(createNode(obj));
@@ -300,7 +432,7 @@ export default function GraphTest() {
         return () => {
             window.clearTimeout(timeout);
         };
-    }, [updateStateSummary])
+    }, [graphApi, updateStateSummary]);
 
     useEffect(() => {
         let running = true;
@@ -345,7 +477,7 @@ export default function GraphTest() {
                 </div>
                 <div className="graph-test-graph">
                     <Graph
-                        ref={apiRef}
+                        api={graphApi}
                         mode="edit"
                         onError={(err) => console.error("[GraphError]", err)}
                     />

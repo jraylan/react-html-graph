@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { ConnectionContext } from "../context/connection-context";
-import { PortConnection, ConnectionType, ConnectionProviderProps, DragState, PortRegistration } from "../types";
+import { PortConnection, ConnectionType, ConnectionProviderProps, DragState, PortRegistration, ConnectionApi } from "../types";
 import useGraphMode from "../hooks/graph-mode";
 import useViewbox from "../hooks/viewbox";
 import useGraphRoot from "../hooks/graph-root";
@@ -13,7 +13,7 @@ import useGraphRoot from "../hooks/graph-root";
  * @param props Propriedades do provider (ConnectionProviderProps)
  * @returns JSX.Element
  */
-export default function ConnectionProvider({ graphApiRef, children }: ConnectionProviderProps) {
+export default function ConnectionProvider({ graphApi, children }: ConnectionProviderProps) {
     const [connections, setConnections] = useState<PortConnection[]>([]);
     const [dragState, setDragState] = useState<DragState>({ active: false });
     const dragStateRef = useRef<DragState>({ active: false });
@@ -23,6 +23,7 @@ export default function ConnectionProvider({ graphApiRef, children }: Connection
     const viewbox = useViewbox();
     const graphRoot = useGraphRoot();
     const viewboxRef = useRef(viewbox);
+    const connectionApiRef = useRef<ConnectionApi | null>(null);
     viewboxRef.current = viewbox;
     connectionsRef.current = connections;
 
@@ -35,8 +36,8 @@ export default function ConnectionProvider({ graphApiRef, children }: Connection
     }, []);
 
     const getGraphApi = useCallback(() => {
-        return graphApiRef.current;
-    }, [graphApiRef]);
+        return graphApi;
+    }, [graphApi]);
 
     const connect = useCallback((connection: PortConnection): void => {
         if (mode === "readonly") return;
@@ -87,7 +88,7 @@ export default function ConnectionProvider({ graphApiRef, children }: Connection
 
             if (sourcePort?.onDragEnd) {
                 try {
-                    await sourcePort.onDragEnd(graphApiRef.current!, {
+                    await sourcePort.onDragEnd(graphApi, {
                         sourceNodeId: current.sourceNodeId,
                         sourcePortName: current.sourcePortName,
                         connectionType: current.connectionType,
@@ -103,7 +104,7 @@ export default function ConnectionProvider({ graphApiRef, children }: Connection
             // Oculta o link temporário após o callback finalizar
             setDragState({ active: false });
         },
-        [graphApiRef]
+        [graphApi]
     );
 
     // mouseup global: encerra o arraste quando clicado em espaço vazio
@@ -128,8 +129,13 @@ export default function ConnectionProvider({ graphApiRef, children }: Connection
         return () => document.removeEventListener("mouseup", handleMouseUp);
     }, [endDrag, graphRoot]);
 
-    const value = useMemo(
-        () => ({
+    const value = useMemo(() => {
+        connectionApiRef.current = {
+            connect,
+            disconnect,
+            getConnections: () => connectionsRef.current,
+        }
+        return {
             connections,
             dragState,
             getGraphApi,
@@ -139,9 +145,16 @@ export default function ConnectionProvider({ graphApiRef, children }: Connection
             endDrag,
             registerPort,
             unregisterPort,
-        }),
-        [connections, dragState, getGraphApi, connect, disconnect, startDrag, endDrag, registerPort, unregisterPort]
-    );
+        }
+    }, [
+        connections, dragState,
+        getGraphApi, connect,
+        disconnect, startDrag,
+        endDrag, registerPort,
+        unregisterPort
+    ]);
+
+
 
     return (
         <ConnectionContext.Provider value={value}>

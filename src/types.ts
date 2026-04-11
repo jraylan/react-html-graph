@@ -40,10 +40,10 @@ export interface ConnectionContextProps {
     unregisterPort(nodeId: string, portName: string): void;
 }
 
-/** Propriedades do provider que expõe a API do grafo via ref. */
+/** Propriedades do provider que expõe a API do grafo. */
 export interface ConnectionProviderProps {
-    /** Ref mutável que receberá a instância de GraphApi. */
-    graphApiRef: React.RefObject<GraphApi | null>;
+    /** Instância da API do grafo. */
+    graphApi: GraphApi;
     /** Elementos filhos renderizados pelo provider. */
     children: React.ReactNode;
 }
@@ -72,7 +72,7 @@ export interface ErrorContextProps {
     reportError(error: GraphError): void;
 }
 
-/** API imperativa do grafo (usada por refs para manipular nós/links). */
+/** API imperativa do grafo (usada para manipular nós/links). */
 export interface GraphApi {
     addNode(node: NodeDefinition): void;
     removeNode(id: string): void;
@@ -89,6 +89,14 @@ export interface GraphApi {
     centralize(options?: GraphCentralizeOptions): Promise<Viewbox>;
     /** Aplica um algoritmo de layout aos nós do grafo. */
     applyLayout(input: GraphApplyLayoutInput): Promise<GraphLayoutResult>;
+    /** Registra um tipo de nó com portas e template opcionais. */
+    registerNodeType(name: string, definition: NodeTypeDefinition): void;
+    /** Define o template padrão para nós sem template específico no tipo. */
+    setDefaultNodeTemplate(template: (props: NodeObjectTemplateProps) => React.ReactNode): void;
+    /** Registra um template de link para um tipo de conexão. */
+    registerLinkTemplate(connectionType: string, template: (props: LinkInfoContextValue) => React.ReactNode): void;
+    /** Define o template padrão para links sem template registrado. */
+    setDefaultLinkTemplate(template: (props: LinkInfoContextValue) => React.ReactNode): void;
 }
 
 /** Estado do viewbox — posição e escala do canvas. */
@@ -107,7 +115,7 @@ export interface Viewbox {
 
 /** Informação básica de um evento de porta (subset das props da porta). */
 export interface GraphInfo {
-    type: ConnectionType;
+    connectionType: ConnectionType;
     id: string;
     nodeId: string;
     direction: "input" | "output" | "bidirectional";
@@ -140,8 +148,8 @@ export type GraphProps = {
     mode?: GraphMode;
     /** Callback chamado quando ocorre um erro no grafo. */
     onError?: (error: GraphError) => void;
-    /** Ref para acessar a api (GraphApi). */
-    ref?: React.Ref<GraphApi>;
+    /** Instância da API criada por useGraphApi. */
+    api: GraphApi;
 }
 
 /** Entrada pública para aplicar um layout aos nós existentes do grafo. */
@@ -281,7 +289,7 @@ export interface GraphNodeRuntimeState<T = any> {
 }
 
 /** Propriedades do componente GraphObject (nó do grafo). */
-export interface GraphObjectProps<T = any> {
+export interface GraphObjectProps<T extends object = any> {
     /** Identificador único do nó. */
     id: string;
     /** Posição controlada pelo Graph quando disponível. */
@@ -327,7 +335,7 @@ export interface GraphPortMouseOverEvent {
 /** Propriedades de um componente de porta no grafo. */
 export interface GraphPortProps {
     /** Tipo da conexão suportada pela porta. */
-    type: ConnectionType;
+    connectionType: ConnectionType;
     /** Identificador da porta. */
     id: string;
     /** Identificador do nó que contém a porta. */
@@ -352,34 +360,91 @@ export interface GraphPortProps {
 export interface LinkDefinition<T = any> {
     /** Identificador único do link. */
     id: string;
+    /** Tipo de conexão usado para resolver o template. */
+    connectionType?: string;
     /** Ponto de origem { node, port }. */
     from: { node: string; port: string };
     /** Ponto de destino { node, port }. */
     to: { node: string; port: string };
-    /** Espessura do link (opcional). */
-    width?: number;
-    /** Espessura do fluxo forward (opcional). */
-    forwardWidth?: number;
-    /** Espessura do fluxo reverse (opcional). */
-    reverseWidth?: number;
-    /** Espaçamento entre fluxos forward/reverse (opcional). */
-    spacing?: number;
     /** Dados arbitrários associados ao link (opcional). */
     data?: T;
-    /** Rótulos do link (opcional). */
-    labels?: LinkLabel[];
-    /** Cor do fluxo forward. */
-    forwardColor?: string;
-    /** Cor do fluxo reverse. */
-    reverseColor?: string;
-    /** Tamanho do traço para stroke dash (opcional). */
-    dashSize?: number;
-    /** Espaço entre traços (opcional). */
-    gapSize?: number;
-    /** Duração da animação do fluxo forward (s). */
-    forwardDuration?: number;
-    /** Duração da animação do fluxo reverse (s). */
-    reverseDuration?: number;
+}
+
+/**
+ * Valor exposto pelo contexto de informações de um link.
+ * Fornece dados dos nós/portas conectados para que componentes
+ * filhos possam renderizar o path e observar posições.
+ */
+export interface LinkInfoContextValue<T = any> {
+    /** Identificador único do link. */
+    id: string;
+    /** Identificadores lógicos da extremidade de origem. */
+    from: { node: string; port: string };
+    /** Identificadores lógicos da extremidade de destino. */
+    to: { node: string; port: string };
+    /** Elemento DOM do nó de origem (node-graph-object). */
+    fromNode: HTMLElement | null;
+    /** Elemento DOM da porta de origem (node-graph-port). */
+    fromPort: HTMLElement | null;
+    /** Elemento DOM do nó de destino. */
+    toNode: HTMLElement | null;
+    /** Elemento DOM da porta de destino. */
+    toPort: HTMLElement | null;
+    /** Estado runtime do nó de origem (posição, dimensões, data). */
+    fromNodeState: GraphNodeRuntimeState | null;
+    /** Estado runtime do nó de destino. */
+    toNodeState: GraphNodeRuntimeState | null;
+    /** Callback para reportar o estado runtime do link. */
+    data: T
+    onStateChange?: (state: GraphLinkRuntimeState) => void;
+}
+
+/**
+ * Contexto do registro centralizado de nós.
+ * Mantém referências aos elementos DOM e estados runtime de todos os nós ativos.
+ */
+export interface NodeRegistryContextValue {
+    /** Retorna o elemento DOM de um nó pelo id. */
+    getNodeElement: (nodeId: string) => HTMLElement | null;
+    /** Retorna o elemento DOM de uma porta pelo nodeId e portId. */
+    getPortElement: (nodeId: string, portId: string) => HTMLElement | null;
+    /** Retorna o estado runtime de um nó pelo id. */
+    getNodeState: (nodeId: string) => GraphNodeRuntimeState | null;
+    /** Registra o elemento DOM de um nó. */
+    registerNodeElement: (nodeId: string, element: HTMLElement) => void;
+    /** Remove o registro do elemento DOM de um nó. */
+    unregisterNodeElement: (nodeId: string) => void;
+    /** Registra o elemento DOM de uma porta. */
+    registerPortElement: (nodeId: string, portId: string, element: HTMLElement) => void;
+    /** Remove o registro do elemento DOM de uma porta. */
+    unregisterPortElement: (nodeId: string, portId: string) => void;
+    /** Atualiza o estado runtime de um nó. */
+    updateNodeState: (state: GraphNodeRuntimeState) => void;
+}
+
+/**
+ * Bus centralizado de eventos do grafo.
+ * Permite que qualquer componente assine ou emita eventos de nós.
+ */
+export interface GraphEventBusContextValue {
+    /** Assina eventos de um nó específico. */
+    subscribe: <K extends keyof NodeEventMap>(
+        nodeId: string,
+        event: K,
+        listener: NodeEventCallback<K>,
+    ) => void;
+    /** Remove a assinatura de eventos de um nó. */
+    unsubscribe: <K extends keyof NodeEventMap>(
+        nodeId: string,
+        event: K,
+        listener: NodeEventCallback<K>,
+    ) => void;
+    /** Emite um evento para os assinantes de um nó. */
+    emit: <K extends keyof NodeEventMap>(
+        nodeId: string,
+        event: K,
+        payload: Omit<NodeEventMap[K], "type" | "nodeId">,
+    ) => void;
 }
 
 /**
@@ -418,17 +483,23 @@ interface LinkLabelBase {
 /** Definição de um nó para uso via API imperativa. */
 export interface NodeDefinition<T = any> {
     id: string;
-    ports?: PortDefinition[];
+    /** Tipo registrado via registerNodeType. */
+    nodeType: string;
     data?: T;
     position: Point3D;
-    template: (props: NodeObjectTemplateProps<T>) => React.ReactNode;
+}
+
+/** Definição de um tipo de nó (portas e template). */
+export interface NodeTypeDefinition {
+    ports: PortDefinition[];
+    template?: (props: NodeObjectTemplateProps) => React.ReactNode;
 }
 
 /** Props passadas ao template do nó (usadas para renderizar portas e conteúdo). */
 export interface NodeObjectTemplateProps<T = any> {
     id: string;
     ports: PortsByLocation;
-    data: T;
+    data?: T;
 }
 
 /** Ponto 3D simples. */
@@ -439,19 +510,20 @@ export interface Point3D {
 }
 
 /** Conexão entre duas portas (modelo lógico). */
-export interface PortConnection {
+export interface PortConnection<T = any> {
     connectionType: ConnectionType;
     from: { nodeId: string; portName: string };
     to: { nodeId: string; portName: string };
+    data?: T;
 }
 
 /** Definição de uma porta em um nó. */
 export interface PortDefinition {
     id: string;
-    type: ConnectionType;
+    connectionType: ConnectionType;
     direction: "input" | "output" | "bidirectional";
     location: { x: number; y: number } | "top" | "bottom" | "left" | "right";
-    onDragEnd?: (api: ConnectionApi, event: PortDragEndEvent) => Promise<void>;
+    onDragEnd?: (api: GraphApi, event: PortDragEndEvent) => Promise<void>;
     children: (props: PortRenderProps) => React.ReactNode;
 }
 
@@ -476,7 +548,7 @@ export interface PortRegistration {
 
 /** Propriedades passadas para renderização das portas (UI). */
 export interface PortRenderProps {
-    type: ConnectionType;
+    connectionType: ConnectionType;
     id: string;
     nodeId: string;
     direction: "input" | "output" | "bidirectional";
@@ -502,4 +574,118 @@ export interface GraphContextProps {
     nodes: React.ReactNode[];
     links: React.ReactNode[];
     mode: GraphMode;
+}
+
+
+/**
+ * Evento disparado quando os dados associados a um nó mudam.
+ *
+ * - type: 'dataChange'
+ * - nodeId: id do nó que mudou
+ * - data: payload arbitrário com os novos dados
+ */
+export interface DataChangeEvent<T = any> {
+    readonly type: "dataChange";
+    readonly nodeId: string;
+    readonly data: T;
+}
+
+/**
+ * Evento disparado quando um nó é movido.
+ *
+ * - type: 'move'
+ * - nodeId: id do nó movido
+ * - position: nova posição do nó no espaço 3D do grafo
+ */
+export interface GraphMoveEvent {
+    readonly type: "move";
+    readonly nodeId: string;
+    readonly position: Point3D;
+}
+
+/**
+ * Evento disparado quando uma conexão é criada ou removida.
+ */
+export interface ConnectionChangeEvent {
+    readonly type: "connectionChange";
+    readonly nodeId: string;
+    readonly connection: PortConnection;
+    readonly action: "connect" | "disconnect";
+}
+
+/**
+ * Evento disparado quando o estado de seleção de um nó muda.
+ */
+export interface GraphNodeSelectionChangeEvent {
+    readonly type: "select";
+    readonly nodeId: string;
+    readonly selected: boolean;
+}
+
+/**
+ * União discriminada de todos os eventos locais de um nó.
+ */
+export type NodeEvent =
+    | DataChangeEvent
+    | GraphMoveEvent
+    | ConnectionChangeEvent
+    | GraphNodeSelectionChangeEvent
+    ;
+
+/**
+ * Mapa que associa chaves de evento aos seus tipos concretos.
+ */
+export type NodeEventMap = {
+    dataChange: DataChangeEvent;
+    move: GraphMoveEvent;
+    connectionChange: ConnectionChangeEvent;
+    select: GraphNodeSelectionChangeEvent;
+}
+
+
+/** Tipo de callback para eventos de nó, parametrizado pelo tipo específico do evento. */
+export type NodeEventCallback<K extends keyof NodeEventMap> = (event: NodeEventMap[K]) => void;
+
+
+/**
+ * Tipo de função que emite eventos locais do nó para ouvintes registrados.
+ *
+ * @param event Chave do evento (uma das chaves definidas em NodeEventMap).
+ * @param payload Payload do evento — tipado como a união dos possíveis eventos
+ *                definidos em NodeEventMap. Implementações podem reforçar a
+ *                correlação entre 'event' e 'payload' se necessário.
+ */
+export type NodeEventEmitter = <K extends keyof NodeEventMap>(event: K, payload: Omit<NodeEventMap[K], "type" | "nodeId">) => void;
+
+/**
+ * Props do provider responsável por expor o emissor de eventos do nó.
+ *
+ * - children: nós filhos renderizados dentro do provider.
+ * - emmiter: função chamada com o emitter quando ele estiver disponível.
+ *   Observação: a grafia 'emmiter' preserva o nome já usado no código base.
+ */
+export type NodeEventProviderProps = {
+    children: React.ReactNode;
+    emitter: (emitter: NodeEventEmitter) => void;
+    nodeId: string;
+}
+
+
+/**
+ * Valor exposto pelo contexto de um nó, permitindo a inscrição e
+ * remoção de listeners para eventos locais do nó.
+ */
+export interface NodeEventContextValue {
+    /**
+     * Registra um listener para o tipo de evento especificado.
+     * @param event Tipo do evento a observar (chave de NodeEventMap).
+     * @param listener Função chamada com o evento específico quando disparado.
+     */
+    addEventListener: <K extends keyof NodeEventMap>(event: K, listener: NodeEventCallback<K>) => void;
+    /**
+     * Remove um listener previamente registrado para o tipo de evento especificado.
+     * @param event Tipo do evento do listener.
+     * @param listener Mesma referência de função usada em addEventListener.
+     */
+    removeEventListener: <K extends keyof NodeEventMap>(event: K, listener: NodeEventCallback<K>) => void;
 }
