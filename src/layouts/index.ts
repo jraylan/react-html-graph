@@ -1,4 +1,4 @@
-import { GraphLayoutAlgorithm, GraphLayoutInput, GraphLayoutResult } from "../types";
+import { GraphLayoutBuiltinAlgorithm, GraphLayoutInput, GraphLayoutResult } from "../types";
 import forceDirectionLayout from "./force-direction-layout";
 import organicLayout from "./organic-layout";
 import radialLayout from "./radial-layout";
@@ -11,7 +11,7 @@ import treeLayout from "./tree-layout";
 export type GraphLayoutExecutor = (input: GraphLayoutInput) => Promise<GraphLayoutResult>;
 
 /** Mapa estável dos algoritmos de layout disponíveis. */
-export const GRAPH_LAYOUT_EXECUTORS: Record<GraphLayoutAlgorithm, GraphLayoutExecutor> = {
+export const GRAPH_LAYOUT_EXECUTORS: Record<GraphLayoutBuiltinAlgorithm, GraphLayoutExecutor> = {
     "force-direction": forceDirectionLayout,
     organic: organicLayout,
     radial: radialLayout,

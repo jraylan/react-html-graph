@@ -167,7 +167,7 @@ export interface GraphApplyLayoutInput {
 /** Modo do grafo (controle de edição vs somente leitura). */
 export type GraphMode = "readonly" | "edit";
 
-/** Nome de um algoritmo de layout suportado pelo grafo. */
+/** Valores válidos como algoritmo de layout. */
 export type GraphLayoutAlgorithm =
     | "force-direction"
     | "organic"
@@ -176,6 +176,11 @@ export type GraphLayoutAlgorithm =
     | "structural"
     | "tree"
     | ((input: GraphLayoutInput) => Promise<GraphLayoutResult>);
+
+
+/** Nome de um algoritmo de layout suportado pelo grafo. */
+export type GraphLayoutBuiltinAlgorithm = Exclude<GraphLayoutAlgorithm, (input: GraphLayoutInput) => Promise<GraphLayoutResult>>;
+
 
 /** Link simplificado usado pelos algoritmos de layout. */
 export interface GraphLayoutLink<T = any> {

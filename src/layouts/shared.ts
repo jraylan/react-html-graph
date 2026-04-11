@@ -1,5 +1,5 @@
 import { calculateLayout } from "../calculations";
-import { GraphLayoutAlgorithm, GraphLayoutInput, GraphLayoutResult } from "../types";
+import { GraphLayoutBuiltinAlgorithm, GraphLayoutInput, GraphLayoutResult } from "../types";
 
 
 /**
@@ -10,7 +10,7 @@ import { GraphLayoutAlgorithm, GraphLayoutInput, GraphLayoutResult } from "../ty
  * @returns Resultado com posições e bounds calculados
  */
 export async function runLayoutAlgorithm(
-    algorithm: GraphLayoutAlgorithm,
+    algorithm: GraphLayoutBuiltinAlgorithm,
     input: GraphLayoutInput,
 ): Promise<GraphLayoutResult> {
     const result = await calculateLayout({
