@@ -284,7 +284,6 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
                 <GraphObject
                     key={def.id}
                     id={def.id}
-                    position={def.position}
                     ports={ports}
                     data={def.data}
                     initialPosition={def.position}

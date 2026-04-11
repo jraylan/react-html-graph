@@ -17,7 +17,7 @@ export interface UseMoveBehaviourOptions {
     /** Modo do grafo (readonly não permite drag). */
     mode: GraphMode;
     /** Posição efetiva atual do nó. */
-    effectivePosition: Point3D;
+    position: Point3D;
     /** Callback chamado ao finalizar o movimento. */
     onMoveEnd?: (newPosition: Point3D) => void;
     /** Callback chamado durante o arraste para reportar estado. */
@@ -45,7 +45,7 @@ export function useMoveBehaviour({
     elementRef,
     getZoom,
     mode,
-    effectivePosition,
+    position,
     onMoveEnd,
     onMoving,
     eventEmitter,
@@ -63,9 +63,9 @@ export function useMoveBehaviour({
         moveRef.current.moving = true;
         moveRef.current.movePointStart.x = e.clientX;
         moveRef.current.movePointStart.y = e.clientY;
-        moveRef.current.startPos = { x: effectivePosition.x, y: effectivePosition.y };
-        moveRef.current.currentPos = { x: effectivePosition.x, y: effectivePosition.y };
-    }, [effectivePosition.x, effectivePosition.y, mode]);
+        moveRef.current.startPos = { x: position.x, y: position.y };
+        moveRef.current.currentPos = { x: position.x, y: position.y };
+    }, [position.x, position.y, mode]);
 
     const handleMouseUp = useCallback((e: MouseEvent | React.MouseEvent) => {
         if (e.button === 0 && moveRef.current.moving) {
@@ -73,12 +73,12 @@ export function useMoveBehaviour({
             const nextPosition: Point3D = {
                 x: moveRef.current.currentPos.x,
                 y: moveRef.current.currentPos.y,
-                z: effectivePosition.z,
+                z: position.z,
             };
             onMoveEnd?.(nextPosition);
             eventEmitter?.("move", { position: nextPosition });
         }
-    }, [effectivePosition.z, onMoveEnd, eventEmitter]);
+    }, [position.z, onMoveEnd, eventEmitter]);
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!elementRef.current || !moveRef.current.moving) return;
@@ -90,7 +90,7 @@ export function useMoveBehaviour({
         const nextPosition: Point3D = {
             x: newX,
             y: newY,
-            z: effectivePosition.z,
+            z: position.z,
         };
         moveRef.current.currentPos.x = newX;
         moveRef.current.currentPos.y = newY;
@@ -98,7 +98,7 @@ export function useMoveBehaviour({
         elementRef.current.style.top = `${newY.toFixed(0)}px`;
         onMoving?.(nextPosition);
         eventEmitter?.("move", { position: nextPosition });
-    }, [effectivePosition.z, getZoom, elementRef, onMoving, eventEmitter]);
+    }, [position.z, getZoom, elementRef, onMoving, eventEmitter]);
 
     // Registra listeners globais de mousemove e mouseup
     useEffect(() => {

@@ -148,6 +148,11 @@ function workerSource() {
         z: number;
     };
 
+    type WorkerLayoutEdge = {
+        fromIndex: number;
+        toIndex: number;
+    };
+
     function sortNodeIds(nodes: WorkerLayoutNode[]) {
         return nodes.map(node => node.id);
     }
@@ -449,12 +454,149 @@ function workerSource() {
         };
     }
 
-    function getPreferredDirection(options: any = {}, fallback: "LR" | "TB") {
+    function getLayoutDirection(
+        options: any = {},
+        fallback: "LR" | "TB",
+        respectViewport = true,
+    ) {
         if (options.direction) return options.direction;
+        if (!respectViewport) return fallback;
         const viewportWidth = options.viewport?.width ?? 0;
         const viewportHeight = options.viewport?.height ?? 0;
         if (viewportWidth <= 0 || viewportHeight <= 0) return fallback;
         return viewportWidth >= viewportHeight ? "LR" : "TB";
+    }
+
+    function buildLayerOrderIndex(layers: Map<number, string[]>) {
+        const layerOrderIndex = new Map<string, number>();
+
+        for (const ids of layers.values()) {
+            ids.forEach((id, index) => {
+                layerOrderIndex.set(id, index);
+            });
+        }
+
+        return layerOrderIndex;
+    }
+
+    function getNeighborBarycenter(
+        nodeId: string,
+        depths: Map<string, number>,
+        neighbors: Map<string, string[]>,
+        layerOrderIndex: Map<string, number>,
+        currentDepth: number,
+        relation: "before" | "after",
+    ) {
+        const positions = (neighbors.get(nodeId) ?? [])
+            .filter(neighborId => {
+                const neighborDepth = depths.get(neighborId);
+                if (neighborDepth === undefined) return false;
+                return relation === "before"
+                    ? neighborDepth < currentDepth
+                    : neighborDepth > currentDepth;
+            })
+            .map(neighborId => layerOrderIndex.get(neighborId))
+            .filter((value): value is number => value !== undefined);
+
+        if (positions.length === 0) return null;
+        return positions.reduce((sum, value) => sum + value, 0) / positions.length;
+    }
+
+    function reorderLayerByBarycenter(
+        ids: string[],
+        depths: Map<string, number>,
+        neighbors: Map<string, string[]>,
+        layerOrderIndex: Map<string, number>,
+        fallbackOrderIndex: Map<string, number>,
+        currentDepth: number,
+        relation: "before" | "after",
+    ) {
+        return [...ids].sort((leftId, rightId) => {
+            const leftBarycenter = getNeighborBarycenter(
+                leftId,
+                depths,
+                neighbors,
+                layerOrderIndex,
+                currentDepth,
+                relation,
+            );
+            const rightBarycenter = getNeighborBarycenter(
+                rightId,
+                depths,
+                neighbors,
+                layerOrderIndex,
+                currentDepth,
+                relation,
+            );
+
+            if (
+                leftBarycenter !== null
+                && rightBarycenter !== null
+                && leftBarycenter !== rightBarycenter
+            ) {
+                return leftBarycenter - rightBarycenter;
+            }
+
+            if (leftBarycenter !== null) return -1;
+            if (rightBarycenter !== null) return 1;
+
+            return (fallbackOrderIndex.get(leftId) ?? 0) - (fallbackOrderIndex.get(rightId) ?? 0);
+        });
+    }
+
+    function optimizeHierarchicalLayerOrder(
+        layers: Map<number, string[]>,
+        depths: Map<string, number>,
+        incoming: Map<string, string[]>,
+        outgoing: Map<string, string[]>,
+        fallbackOrderIndex: Map<string, number>,
+    ) {
+        const layerKeys = [...layers.keys()].sort((a, b) => a - b);
+        if (layerKeys.length <= 1) return layers;
+
+        for (let sweep = 0; sweep < 4; sweep++) {
+            let layerOrderIndex = buildLayerOrderIndex(layers);
+
+            for (let index = 1; index < layerKeys.length; index++) {
+                const depth = layerKeys[index];
+                const ids = layers.get(depth) ?? [];
+                layers.set(
+                    depth,
+                    reorderLayerByBarycenter(
+                        ids,
+                        depths,
+                        incoming,
+                        layerOrderIndex,
+                        fallbackOrderIndex,
+                        depth,
+                        "before",
+                    ),
+                );
+                layerOrderIndex = buildLayerOrderIndex(layers);
+            }
+
+            layerOrderIndex = buildLayerOrderIndex(layers);
+
+            for (let index = layerKeys.length - 2; index >= 0; index--) {
+                const depth = layerKeys[index];
+                const ids = layers.get(depth) ?? [];
+                layers.set(
+                    depth,
+                    reorderLayerByBarycenter(
+                        ids,
+                        depths,
+                        outgoing,
+                        layerOrderIndex,
+                        fallbackOrderIndex,
+                        depth,
+                        "after",
+                    ),
+                );
+                layerOrderIndex = buildLayerOrderIndex(layers);
+            }
+        }
+
+        return layers;
     }
 
     function layoutSequential(nodes: WorkerLayoutNode[], links: WorkerLayoutLink[], options: any = {}) {
@@ -494,12 +636,20 @@ function workerSource() {
         return normalizeLayout(nodes, packDisconnectedComponents(nodes, links, positions, options), options);
     }
 
-    function layoutHierarchical(nodes: WorkerLayoutNode[], links: WorkerLayoutLink[], options: any = {}, treeMode = false) {
+    function layoutHierarchical(
+        nodes: WorkerLayoutNode[],
+        links: WorkerLayoutLink[],
+        options: any = {},
+        treeMode = false,
+        respectViewport = false,
+    ) {
+        const { outgoing, incoming } = buildGraphIndex(nodes, links);
         const gapX = options.gapX ?? 100;
         const gapY = options.gapY ?? 80;
-        const direction = getPreferredDirection(options, treeMode ? "TB" : "LR");
+        const direction = getLayoutDirection(options, treeMode ? "TB" : "LR", respectViewport);
         const depths = getHierarchicalDepths(nodes, links, treeMode);
         const order = sortNodeIds(nodes);
+        const fallbackOrderIndex = new Map(order.map((id, index) => [id, index]));
         const nodeMap = new Map(nodes.map(node => [node.id, node]));
         const layers = new Map<number, string[]>();
 
@@ -509,6 +659,8 @@ function workerSource() {
             group.push(id);
             layers.set(depth, group);
         }
+
+        optimizeHierarchicalLayerOrder(layers, depths, incoming, outgoing, fallbackOrderIndex);
 
         const layerKeys = [...layers.keys()].sort((a, b) => a - b);
         const positions: WorkerLayoutPosition[] = [];
@@ -741,6 +893,144 @@ function workerSource() {
         }
     }
 
+    function getMidpoint(from: { x: number; y: number }, to: { x: number; y: number }) {
+        return {
+            x: (from.x + to.x) / 2,
+            y: (from.y + to.y) / 2,
+        };
+    }
+
+    function getNormalizedVector(x: number, y: number) {
+        const length = Math.sqrt(x * x + y * y) || 1;
+        return { x: x / length, y: y / length };
+    }
+
+    function segmentsIntersect(
+        leftFrom: { x: number; y: number },
+        leftTo: { x: number; y: number },
+        rightFrom: { x: number; y: number },
+        rightTo: { x: number; y: number },
+    ) {
+        const epsilon = 0.001;
+        const leftToRightFrom = (leftTo.x - leftFrom.x) * (rightFrom.y - leftFrom.y) - (leftTo.y - leftFrom.y) * (rightFrom.x - leftFrom.x);
+        const leftToRightTo = (leftTo.x - leftFrom.x) * (rightTo.y - leftFrom.y) - (leftTo.y - leftFrom.y) * (rightTo.x - leftFrom.x);
+        const rightToLeftFrom = (rightTo.x - rightFrom.x) * (leftFrom.y - rightFrom.y) - (rightTo.y - rightFrom.y) * (leftFrom.x - rightFrom.x);
+        const rightToLeftTo = (rightTo.x - rightFrom.x) * (leftTo.y - rightFrom.y) - (rightTo.y - rightFrom.y) * (leftTo.x - rightFrom.x);
+
+        return (
+            ((leftToRightFrom > epsilon && leftToRightTo < -epsilon) || (leftToRightFrom < -epsilon && leftToRightTo > epsilon))
+            && ((rightToLeftFrom > epsilon && rightToLeftTo < -epsilon) || (rightToLeftFrom < -epsilon && rightToLeftTo > epsilon))
+        );
+    }
+
+    function applyLinkCrossingForces(
+        edges: WorkerLayoutEdge[],
+        centers: Array<{ x: number; y: number }>,
+        displacement: Array<{ x: number; y: number }>,
+        strength: number,
+        seedCenters?: Array<{ x: number; y: number } | null>,
+    ) {
+        if (strength <= 0 || edges.length < 2) return 0;
+
+        let crossingCount = 0;
+
+        for (let leftIndex = 0; leftIndex < edges.length; leftIndex++) {
+            const leftEdge = edges[leftIndex];
+            const leftFrom = centers[leftEdge.fromIndex];
+            const leftTo = centers[leftEdge.toIndex];
+
+            for (let rightIndex = leftIndex + 1; rightIndex < edges.length; rightIndex++) {
+                const rightEdge = edges[rightIndex];
+
+                if (
+                    leftEdge.fromIndex === rightEdge.fromIndex
+                    || leftEdge.fromIndex === rightEdge.toIndex
+                    || leftEdge.toIndex === rightEdge.fromIndex
+                    || leftEdge.toIndex === rightEdge.toIndex
+                ) {
+                    continue;
+                }
+
+                const rightFrom = centers[rightEdge.fromIndex];
+                const rightTo = centers[rightEdge.toIndex];
+                if (!segmentsIntersect(leftFrom, leftTo, rightFrom, rightTo)) continue;
+
+                crossingCount += 1;
+
+                const leftMid = getMidpoint(leftFrom, leftTo);
+                const rightMid = getMidpoint(rightFrom, rightTo);
+                let separationX = leftMid.x - rightMid.x;
+                let separationY = leftMid.y - rightMid.y;
+
+                const leftSeedFrom = seedCenters?.[leftEdge.fromIndex];
+                const leftSeedTo = seedCenters?.[leftEdge.toIndex];
+                const rightSeedFrom = seedCenters?.[rightEdge.fromIndex];
+                const rightSeedTo = seedCenters?.[rightEdge.toIndex];
+
+                if (leftSeedFrom && leftSeedTo && rightSeedFrom && rightSeedTo) {
+                    const leftSeedMid = getMidpoint(leftSeedFrom, leftSeedTo);
+                    const rightSeedMid = getMidpoint(rightSeedFrom, rightSeedTo);
+                    separationX = leftSeedMid.x - rightSeedMid.x;
+                    separationY = leftSeedMid.y - rightSeedMid.y;
+                }
+
+                if (Math.abs(separationX) < 0.001 && Math.abs(separationY) < 0.001) {
+                    separationX = (leftFrom.x + leftTo.x) - (rightFrom.x + rightTo.x);
+                    separationY = (leftFrom.y + leftTo.y) - (rightFrom.y + rightTo.y);
+                }
+
+                const direction = getNormalizedVector(separationX, separationY);
+                const pushX = direction.x * strength;
+                const pushY = direction.y * strength;
+
+                displacement[leftEdge.fromIndex].x += pushX * 0.5;
+                displacement[leftEdge.fromIndex].y += pushY * 0.5;
+                displacement[leftEdge.toIndex].x += pushX * 0.5;
+                displacement[leftEdge.toIndex].y += pushY * 0.5;
+                displacement[rightEdge.fromIndex].x -= pushX * 0.5;
+                displacement[rightEdge.fromIndex].y -= pushY * 0.5;
+                displacement[rightEdge.toIndex].x -= pushX * 0.5;
+                displacement[rightEdge.toIndex].y -= pushY * 0.5;
+            }
+        }
+
+        return crossingCount;
+    }
+
+    function resolveLinkCrossings(
+        nodes: WorkerLayoutNode[],
+        edges: WorkerLayoutEdge[],
+        centers: Array<{ x: number; y: number }>,
+        spacing: number,
+        gapX: number,
+        gapY: number,
+        seedCenters?: Array<{ x: number; y: number } | null>,
+    ) {
+        if (edges.length < 2) return;
+
+        for (let iteration = 0; iteration < 20; iteration++) {
+            const displacement = nodes.map(() => ({ x: 0, y: 0 }));
+            const crossingCount = applyLinkCrossingForces(
+                edges,
+                centers,
+                displacement,
+                Math.max(spacing * 0.12, 6),
+                seedCenters,
+            );
+
+            if (crossingCount === 0) {
+                return;
+            }
+
+            for (let index = 0; index < centers.length; index++) {
+                centers[index].x += displacement[index].x;
+                centers[index].y += displacement[index].y;
+            }
+
+            separateOverlappingNodes(nodes, centers, gapX, gapY);
+        }
+    }
+
     function runForceLayout(
         nodes: WorkerLayoutNode[],
         links: WorkerLayoutLink[],
@@ -751,10 +1041,42 @@ function workerSource() {
     ) {
         const gapX = options.gapX ?? 140;
         const gapY = options.gapY ?? 100;
+        const averageNodeSize = nodes.reduce((sum, node) => sum + Math.max(node.width, node.height), 0) / Math.max(nodes.length, 1);
+        const baseSpacing = Math.max(gapX, gapY, averageNodeSize * 0.85, 48);
+        const overlapGapX = gapX > 0 ? gapX : Math.min(baseSpacing * 0.25, 24);
+        const overlapGapY = gapY > 0 ? gapY : Math.min(baseSpacing * 0.25, 24);
         const iterations = Math.max(1, Math.floor(options.iterations ?? 220));
         const nodeMap = new Map(nodes.map((node, index) => [node.id, { node, index }]));
+        const { outgoing, incoming } = buildGraphIndex(nodes, links);
+        const nodeDegrees = nodes.map(node => {
+            const degree = new Set([
+                ...(outgoing.get(node.id) ?? []),
+                ...(incoming.get(node.id) ?? []),
+            ]);
+            return degree.size;
+        });
+        const edges = links
+            .map(link => {
+                const fromEntry = nodeMap.get(link.from);
+                const toEntry = nodeMap.get(link.to);
+                if (!fromEntry || !toEntry) return null;
+                return {
+                    fromIndex: fromEntry.index,
+                    toIndex: toEntry.index,
+                } satisfies WorkerLayoutEdge;
+            })
+            .filter((edge): edge is WorkerLayoutEdge => Boolean(edge));
         const nodeRadii = nodes.map(node => Math.sqrt(node.width * node.width + node.height * node.height) / 2);
         const seedPositionMap = new Map((seedPositions ?? []).map(position => [position.id, position]));
+        const seedCenters = nodes.map(node => {
+            const seed = seedPositionMap.get(node.id);
+            if (!seed) return null;
+
+            return {
+                x: seed.x + node.width / 2,
+                y: seed.y + node.height / 2,
+            };
+        });
         const rawPositions = nodes.map(node => {
             const seed = seedPositionMap.get(node.id);
             return {
@@ -768,16 +1090,18 @@ function workerSource() {
         const rawCenterX = rawBounds.left + rawBounds.width / 2;
         const rawCenterY = rawBounds.top + rawBounds.height / 2;
         const { scaleX, scaleY } = getViewportScales(options);
-        const desiredSpanX = Math.max(gapX, gapY) * Math.max(2, Math.sqrt(Math.max(1, nodes.length))) * scaleX;
-        const desiredSpanY = Math.max(gapX, gapY) * Math.max(2, Math.sqrt(Math.max(1, nodes.length))) * scaleY;
+        const desiredSpanX = baseSpacing * Math.max(2, Math.sqrt(Math.max(1, nodes.length))) * scaleX;
+        const desiredSpanY = baseSpacing * Math.max(2, Math.sqrt(Math.max(1, nodes.length))) * scaleY;
         const currentSpanX = Math.max(rawBounds.width, 1);
         const currentSpanY = Math.max(rawBounds.height, 1);
         const compactScaleX = Math.min(1, desiredSpanX / currentSpanX);
         const compactScaleY = Math.min(1, desiredSpanY / currentSpanY);
         const useCircularSeed = rawBounds.width < 4 && rawBounds.height < 4;
         const centers = nodes.map((node, index) => {
+            const rawPosition = rawPositions[index] ?? { x: node.x, y: node.y };
+
             if (useCircularSeed) {
-                const seedRadius = Math.max(gapX, gapY) * 0.8;
+                const seedRadius = baseSpacing * 0.8;
                 const angle = (Math.PI * 2 * index) / Math.max(1, nodes.length);
                 return {
                     x: Math.cos(angle) * seedRadius * scaleX,
@@ -786,15 +1110,15 @@ function workerSource() {
             }
 
             return {
-                x: (node.x + node.width / 2 - rawCenterX) * compactScaleX,
-                y: (node.y + node.height / 2 - rawCenterY) * compactScaleY,
+                x: (rawPosition.x + node.width / 2 - rawCenterX) * compactScaleX,
+                y: (rawPosition.y + node.height / 2 - rawCenterY) * compactScaleY,
             };
         });
 
         const totalNodeArea = nodes.reduce((sum, node) => sum + node.width * node.height, 0);
-        const area = Math.max(totalNodeArea + gapX * gapY * Math.max(1, nodes.length) * 0.35, 1);
+        const area = Math.max(totalNodeArea + baseSpacing * baseSpacing * Math.max(1, nodes.length) * 0.35, 1);
         const k = Math.sqrt(area / Math.max(1, nodes.length));
-        let temperature = Math.max(gapX, gapY, 60);
+        let temperature = Math.max(baseSpacing, 60);
 
         for (let iteration = 0; iteration < iterations; iteration++) {
             const displacement = nodes.map(() => ({ x: 0, y: 0 }));
@@ -809,7 +1133,7 @@ function workerSource() {
                         dy = (Math.random() - 0.5) * 0.01;
                         distance = Math.sqrt(dx * dx + dy * dy);
                     }
-                    const minimumDistance = nodeRadii[i] + nodeRadii[j] + Math.max(gapX, gapY) * 0.18;
+                    const minimumDistance = nodeRadii[i] + nodeRadii[j] + baseSpacing * 0.18;
                     const safeDistance = Math.max(distance - nodeRadii[i] - nodeRadii[j], 1);
                     const force = (k * k) / (safeDistance * 1.5);
                     const fx = (dx / distance) * force;
@@ -838,7 +1162,7 @@ function workerSource() {
                 let dx = centers[i].x - centers[j].x;
                 let dy = centers[i].y - centers[j].y;
                 let distance = Math.sqrt(dx * dx + dy * dy) || 1;
-                const springLength = nodeRadii[i] + nodeRadii[j] + Math.max(gapX, gapY) * 0.28;
+                const springLength = nodeRadii[i] + nodeRadii[j] + baseSpacing * 0.28;
                 const force = (distance - springLength) * 0.2;
                 const fx = (dx / distance) * force;
                 const fy = (dy / distance) * force;
@@ -850,6 +1174,21 @@ function workerSource() {
                 if (directedBias !== 0) {
                     displacement[i].x -= directedBias;
                     displacement[j].x += directedBias;
+                }
+            }
+
+            if (seedCenters.some(center => center !== null)) {
+                const settlingFactor = 0.35 + (iteration / Math.max(iterations - 1, 1)) * 0.85;
+
+                for (let i = 0; i < nodes.length; i++) {
+                    const seedCenter = seedCenters[i];
+                    if (!seedCenter) continue;
+
+                    const degree = nodeDegrees[i];
+                    const leafBias = degree <= 1 ? 1.6 : degree === 2 ? 1.15 : 0.9;
+                    const seedStrength = 0.04 * leafBias * settlingFactor;
+                    displacement[i].x += (seedCenter.x - centers[i].x) * seedStrength;
+                    displacement[i].y += (seedCenter.y - centers[i].y) * seedStrength;
                 }
             }
 
@@ -865,7 +1204,9 @@ function workerSource() {
             temperature *= 0.96;
         }
 
-        separateOverlappingNodes(nodes, centers, gapX, gapY);
+        separateOverlappingNodes(nodes, centers, overlapGapX, overlapGapY);
+        resolveLinkCrossings(nodes, edges, centers, baseSpacing, overlapGapX, overlapGapY, seedCenters);
+        separateOverlappingNodes(nodes, centers, overlapGapX, overlapGapY);
 
         const positions = nodes.map((node, index) => ({
             id: node.id,

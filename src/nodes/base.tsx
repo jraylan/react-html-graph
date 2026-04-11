@@ -21,7 +21,6 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     id,
     ports,
     data,
-    position: controlledPosition,
     initialPosition,
     onMove,
     onStateChange,
@@ -32,8 +31,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     const registry = useNodeRegistry();
     const eventBus = useGraphEventBus();
     const [eventEmitter, setEmitter] = useState<NodeEventEmitter | null>(null);
-    const [position, setPosition] = useState<Point3D>(() => controlledPosition ?? initialPosition ?? { x: 0, y: 0, z: 0 });
-    const effectivePosition = controlledPosition ?? position;
+    const [position, setPosition] = useState<Point3D>(() => initialPosition ?? { x: 0, y: 0, z: 0 });
 
     // Registra/desregistra o elemento DOM do nó no NodeRegistry
     useEffect(() => {
@@ -73,7 +71,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
         elementRef: ref,
         getZoom,
         mode,
-        effectivePosition,
+        position,
         onMoveEnd: handleMoveEnd,
         onMoving: reportState,
         eventEmitter,
@@ -81,11 +79,11 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
 
     useEffect(() => {
         if (!ref.current) return;
-        ref.current.style.left = `${effectivePosition.x.toFixed(0)}px`;
-        ref.current.style.top = `${effectivePosition.y.toFixed(0)}px`;
-        ref.current.style.zIndex = effectivePosition.z.toFixed(0);
-        reportState(effectivePosition);
-    }, [effectivePosition, reportState]);
+        ref.current.style.left = `${position.x.toFixed(0)}px`;
+        ref.current.style.top = `${position.y.toFixed(0)}px`;
+        ref.current.style.zIndex = position.z.toFixed(0);
+        reportState(position);
+    }, [position, reportState]);
 
     const portsByLocation = useMemo<PortsByLocation>(() => {
         const result: PortsByLocation = {
@@ -119,14 +117,6 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     }, [ports, id]);
 
     useEffect(() => {
-        if (controlledPosition) {
-            setPosition({
-                x: controlledPosition.x,
-                y: controlledPosition.y,
-                z: controlledPosition.z ?? 0,
-            });
-            return;
-        }
         if (initialPosition) {
             setPosition({
                 x: initialPosition.x,
@@ -135,7 +125,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
             });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [controlledPosition?.x, controlledPosition?.y, controlledPosition?.z, initialPosition?.x, initialPosition?.y, initialPosition?.z]);
+    }, [initialPosition?.x, initialPosition?.y, initialPosition?.z]);
 
     useEffect(() => {
         if (!ref.current || !onStateChange) return;
@@ -144,14 +134,14 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
                 ? {
                     x: moveRef.current.currentPos.x,
                     y: moveRef.current.currentPos.y,
-                    z: effectivePosition.z,
+                    z: position.z,
                 }
-                : effectivePosition
+                : position
             );
         });
         observer.observe(ref.current);
         return () => observer.disconnect();
-    }, [effectivePosition, moveRef, onStateChange, reportState]);
+    }, [position, moveRef, onStateChange, reportState]);
 
     // Emite evento dataChange no bus centralizado e no NodeEventProvider local
     useEffect(() => {
