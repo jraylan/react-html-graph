@@ -23,6 +23,7 @@ export type UnidirectionalPathProps = {
     color?: string;
     dashSize?: number;
     animationDuration?: number;
+    rootRef: React.RefObject<HTMLDivElement>;
 }
 
 export default function UnidirectionalPath({
@@ -33,9 +34,10 @@ export default function UnidirectionalPath({
     labels,
     color = "#888",
     dashSize = 12,
+    rootRef,
     animationDuration = 1,
 }: UnidirectionalPathProps) {
-    const rootRef = useRef<SVGSVGElement>(null);
+    const svgRef = useRef<SVGSVGElement>(null);
     const pRef = useRef<SVGPathElement>(null);
     const labelGroupRef = useRef<SVGGElement>(null);
     const viewbox = useViewbox();
@@ -49,9 +51,10 @@ export default function UnidirectionalPath({
 
     // Calcula paths e labels no worker e atualiza DOM diretamente (sem React render)
     const runCalculation = useCallback(() => {
+        const svg = svgRef.current;
         const root = rootRef.current;
         const p = pRef.current;
-        if (!root || !p) return;
+        if (!svg || !p) return;
 
         const resolvedFrom = liveAnchors?.getFrom() ?? from;
         const resolvedTo = liveAnchors?.getTo() ?? to;
@@ -94,8 +97,7 @@ export default function UnidirectionalPath({
             root.style.top = bounds.top + "px";
             root.style.width = bounds.width + "px";
             root.style.height = bounds.height + "px";
-
-            root.setAttribute("viewBox", `${bounds.left} ${bounds.top} ${bounds.width} ${bounds.height}`);
+            svg.setAttribute("viewBox", `${bounds.left} ${bounds.top} ${bounds.width} ${bounds.height}`);
             p.setAttribute("d", pathD);
 
             if (labelResult) {
@@ -114,12 +116,13 @@ export default function UnidirectionalPath({
                 }
             }
         });
-    }, [from, labels, liveAnchors, mathProvider, to]);
+    }, [from, labels, liveAnchors, mathProvider, to, rootRef]);
 
     const runLiveCalculation = useCallback(() => {
+        const svg = svgRef.current;
         const root = rootRef.current;
         const p = pRef.current;
-        if (!root || !p) return;
+        if (!p || !svg) return;
 
         const resolvedFrom = liveAnchors?.getFrom() ?? from;
         const resolvedTo = liveAnchors?.getTo() ?? to;
@@ -135,7 +138,8 @@ export default function UnidirectionalPath({
         root.style.top = result.bounds.top + "px";
         root.style.width = result.bounds.width + "px";
         root.style.height = result.bounds.height + "px";
-        root.setAttribute("viewBox", `${result.bounds.left} ${result.bounds.top} ${result.bounds.width} ${result.bounds.height}`);
+
+        svg.setAttribute("viewBox", `${result.bounds.left} ${result.bounds.top} ${result.bounds.width} ${result.bounds.height}`);
         p.setAttribute("d", result.pathD);
 
         const labelGroup = labelGroupRef.current;
@@ -157,7 +161,7 @@ export default function UnidirectionalPath({
                 textEl.setAttribute("y", String(labelPosition.y));
             });
         }
-    }, [from, labels, liveAnchors, to]);
+    }, [from, labels, liveAnchors, to, rootRef]);
 
     useEffect(() => {
         runCalculation();
@@ -223,7 +227,7 @@ export default function UnidirectionalPath({
     }, [animateFunction])
 
     return (
-        <svg ref={rootRef}>
+        <svg ref={svgRef} style={{ position: "relative", left: 0, top: 0, width: "100%", height: "100%" }}>
             <path
                 ref={pRef}
                 d=""
@@ -232,11 +236,6 @@ export default function UnidirectionalPath({
                 strokeWidth={pStroke}
                 strokeLinecap="round"
                 strokeDasharray={scaledDash}
-                style={{
-                    animationDuration: animationDuration > 0 ? animationDuration + "s" : "0s",
-                    animationDirection: "normal",
-                    ["--cycle-len" as string]: cycleLen + "px",
-                }}
             />
             {labels && labels.length > 0 && (
                 <g ref={labelGroupRef}>

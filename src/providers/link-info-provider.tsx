@@ -10,6 +10,7 @@ interface LinkInfoProviderProps<T = any> {
     from: { node: string; port: string };
     to: { node: string; port: string };
     data?: T;
+    rootRef: React.RefObject<HTMLDivElement>;
     onStateChange?: (state: GraphLinkRuntimeState) => void;
     children: React.ReactNode;
 }
@@ -24,6 +25,7 @@ const LinkInfoProvider = memo(function LinkInfoProvider({
     from,
     to,
     data,
+    rootRef,
     onStateChange,
     children,
 }: LinkInfoProviderProps) {
@@ -90,6 +92,7 @@ const LinkInfoProvider = memo(function LinkInfoProvider({
         get toPort() { return registry.getPortElement(to.node, to.port); },
         fromNodeState,
         toNodeState,
+        rootRef,
         getFromNodeState,
         getToNodeState,
         subscribePositionChanges,
@@ -110,6 +113,7 @@ const LinkInfoProvider = memo(function LinkInfoProvider({
         to,
         toAnchor,
         toNodeState,
+        rootRef,
     ]);
 
     return (

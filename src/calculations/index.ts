@@ -19,47 +19,64 @@ import {
 // Em tempo de execução, Function.toString() retorna o JS compilado (sem tipos TS).
 // Envolvemos em uma IIFE e carregamos em um Blob Worker.
 function workerSource() {
-    function quadraticBezier(
+    const DEFAULT_TENSION = 0.5;
+    const DEFAULT_TANGENT_RATIO = 0.6;
+    const DEFAULT_ANGLE_THRESHOLD = Math.PI / 4;
+    const DEFAULT_ANGLE_BOOST = 80;
+    const BEZIER_HANDLE_SCALE = 1 / (6 * DEFAULT_TENSION * DEFAULT_TENSION);
+    const INTERNAL_HANDLE_RATIO = DEFAULT_TANGENT_RATIO * BEZIER_HANDLE_SCALE;
+
+    function cubicBezier(
         p0x: number, p0y: number, p1x: number, p1y: number,
-        p2x: number, p2y: number, t: number
+        p2x: number, p2y: number, p3x: number, p3y: number, t: number
     ) {
         const t1 = 1 - t;
         return {
-            x: t1 * t1 * p0x + 2 * t1 * t * p1x + t * t * p2x,
-            y: t1 * t1 * p0y + 2 * t1 * t * p1y + t * t * p2y,
+            x: t1 * t1 * t1 * p0x
+                + 3 * t1 * t1 * t * p1x
+                + 3 * t1 * t * t * p2x
+                + t * t * t * p3x,
+            y: t1 * t1 * t1 * p0y
+                + 3 * t1 * t1 * t * p1y
+                + 3 * t1 * t * t * p2y
+                + t * t * t * p3y,
         };
     }
 
-    function quadraticBezierTangent(
+    function cubicBezierTangent(
         p0x: number, p0y: number, p1x: number, p1y: number,
-        p2x: number, p2y: number, t: number
+        p2x: number, p2y: number, p3x: number, p3y: number, t: number
     ) {
         const t1 = 1 - t;
         return {
-            x: 2 * t1 * (p1x - p0x) + 2 * t * (p2x - p1x),
-            y: 2 * t1 * (p1y - p0y) + 2 * t * (p2y - p1y),
+            x: 3 * t1 * t1 * (p1x - p0x)
+                + 6 * t1 * t * (p2x - p1x)
+                + 3 * t * t * (p3x - p2x),
+            y: 3 * t1 * t1 * (p1y - p0y)
+                + 6 * t1 * t * (p2y - p1y)
+                + 3 * t * t * (p3y - p2y),
         };
     }
 
     function normalAt(
         p0x: number, p0y: number, p1x: number, p1y: number,
-        p2x: number, p2y: number, t: number
+        p2x: number, p2y: number, p3x: number, p3y: number, t: number
     ) {
-        const tang = quadraticBezierTangent(p0x, p0y, p1x, p1y, p2x, p2y, t);
+        const tang = cubicBezierTangent(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
         const mag = Math.sqrt(tang.x * tang.x + tang.y * tang.y) || 1;
         return { x: -tang.y / mag, y: tang.x / mag };
     }
 
     function buildLengthTable(
         p0x: number, p0y: number, p1x: number, p1y: number,
-        p2x: number, p2y: number, n: number
+        p2x: number, p2y: number, p3x: number, p3y: number, n: number
     ) {
         const table = new Float64Array(n + 1);
         table[0] = 0;
         let prevX = p0x, prevY = p0y;
         for (let i = 1; i <= n; i++) {
             const t = i / n;
-            const pt = quadraticBezier(p0x, p0y, p1x, p1y, p2x, p2y, t);
+            const pt = cubicBezier(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
             const dx = pt.x - prevX, dy = pt.y - prevY;
             table[i] = table[i - 1] + Math.sqrt(dx * dx + dy * dy);
             prevX = pt.x;
@@ -85,41 +102,96 @@ function workerSource() {
 
     function sampleOffsetPoints(
         p0x: number, p0y: number, p1x: number, p1y: number,
-        p2x: number, p2y: number,
+        p2x: number, p2y: number, p3x: number, p3y: number,
         offset: number, steps: number
     ) {
         const safeSteps = Math.max(1, Math.floor(steps));
-        const points: { x: number; y: number }[] = [];
+        const points: { x: number; y: number; nx: number; ny: number }[] = [];
         for (let i = 0; i <= safeSteps; i++) {
             const t = i / safeSteps;
-            const pt = quadraticBezier(p0x, p0y, p1x, p1y, p2x, p2y, t);
-            const n = normalAt(p0x, p0y, p1x, p1y, p2x, p2y, t);
-            points.push({ x: pt.x + n.x * offset, y: pt.y + n.y * offset });
+            const pt = cubicBezier(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
+            const n = normalAt(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
+            points.push({ x: pt.x + n.x * offset, y: pt.y + n.y * offset, nx: n.x, ny: n.y });
         }
         return points;
     }
 
-    function pointsToQuadraticPath(points: { x: number; y: number }[]) {
+    function pointsToSplinePath(points: { x: number; y: number }[]) {
         if (points.length < 2) return "";
 
         let d = "M " + points[0].x + " " + points[0].y;
-        if (points.length === 2) {
-            const controlX = (points[0].x + points[1].x) / 2;
-            const controlY = (points[0].y + points[1].y) / 2;
-            return d + " Q " + controlX + " " + controlY + " " + points[1].x + " " + points[1].y;
+        const lastIndex = points.length - 1;
+
+        function endpointHandleDistance(direction: { x: number; y: number }, neighbor: { x: number; y: number }) {
+            const nearestDistance = Math.sqrt(neighbor.x * neighbor.x + neighbor.y * neighbor.y);
+            if (nearestDistance === 0) return 0;
+
+            let tangentLength = DEFAULT_TANGENT_RATIO * nearestDistance;
+            const theta = angleBetween(direction, neighbor);
+            if (theta > DEFAULT_ANGLE_THRESHOLD) {
+                tangentLength += DEFAULT_ANGLE_BOOST * (theta - DEFAULT_ANGLE_THRESHOLD);
+            }
+
+            return tangentLength * BEZIER_HANDLE_SCALE;
         }
 
-        for (let i = 1; i < points.length - 1; i++) {
-            const control = points[i];
-            const next = points[i + 1];
-            const midpointX = (control.x + next.x) / 2;
-            const midpointY = (control.y + next.y) / 2;
-            d += " Q " + control.x + " " + control.y + " " + midpointX + " " + midpointY;
-        }
+        const startNeighbor = {
+            x: points[1].x - points[0].x,
+            y: points[1].y - points[0].y,
+        };
+        const endNeighbor = {
+            x: points[lastIndex - 1].x - points[lastIndex].x,
+            y: points[lastIndex - 1].y - points[lastIndex].y,
+        };
+        const startDirection = normalizeVector(startNeighbor.x, startNeighbor.y);
+        const endDirection = normalizeVector(endNeighbor.x, endNeighbor.y);
+        const startHandleDistance = endpointHandleDistance(startDirection, startNeighbor);
+        const endHandleDistance = endpointHandleDistance(endDirection, endNeighbor);
+        const internalAxes = points.map((point, index) => {
+            if (index === 0 || index === lastIndex) {
+                return null;
+            }
 
-        const lastControl = points[points.length - 2];
-        const lastPoint = points[points.length - 1];
-        d += " Q " + lastControl.x + " " + lastControl.y + " " + lastPoint.x + " " + lastPoint.y;
+            return resolveInternalAxis(points[index - 1], point, points[index + 1]);
+        });
+        const previousHandleDistances = points.map((point, index) => {
+            if (index === 0) return 0;
+            const prev = points[index - 1];
+            return Math.sqrt((point.x - prev.x) * (point.x - prev.x) + (point.y - prev.y) * (point.y - prev.y)) * INTERNAL_HANDLE_RATIO;
+        });
+        const nextHandleDistances = points.map((point, index) => {
+            if (index === lastIndex) return 0;
+            const next = points[index + 1];
+            return Math.sqrt((next.x - point.x) * (next.x - point.x) + (next.y - point.y) * (next.y - point.y)) * INTERNAL_HANDLE_RATIO;
+        });
+
+        for (let i = 0; i < lastIndex; i++) {
+            const start = points[i];
+            const end = points[i + 1];
+            const startAxis = i === 0
+                ? startDirection
+                : internalAxes[i] ?? normalizeVector(end.x - start.x, end.y - start.y);
+            const endAxis = i === lastIndex - 1
+                ? endDirection
+                : internalAxes[i + 1] ?? normalizeVector(end.x - start.x, end.y - start.y);
+            const firstControl = controlPoint(
+                start.x,
+                start.y,
+                startAxis,
+                i === 0 ? startHandleDistance : nextHandleDistances[i],
+            );
+            const secondControl = controlPoint(
+                end.x,
+                end.y,
+                i === lastIndex - 1 ? endAxis : { x: -endAxis.x, y: -endAxis.y },
+                i === lastIndex - 1 ? endHandleDistance : previousHandleDistances[i + 1],
+            );
+
+            d += " C "
+                + firstControl.x + " " + firstControl.y + " "
+                + secondControl.x + " " + secondControl.y + " "
+                + end.x + " " + end.y;
+        }
 
         return d;
     }
@@ -137,6 +209,17 @@ function workerSource() {
             x: x / magnitude,
             y: y / magnitude,
         };
+    }
+
+    function angleBetween(left: { x: number; y: number }, right: { x: number; y: number }) {
+        const leftMagnitude = Math.sqrt(left.x * left.x + left.y * left.y);
+        const rightMagnitude = Math.sqrt(right.x * right.x + right.y * right.y);
+        if (leftMagnitude === 0 || rightMagnitude === 0) {
+            return 0;
+        }
+
+        const normalizedDot = Math.max(-1, Math.min(1, (left.x * right.x + left.y * right.y) / (leftMagnitude * rightMagnitude)));
+        return Math.acos(normalizedDot);
     }
 
     function directionToVector(dir: string) {
@@ -157,6 +240,30 @@ function workerSource() {
             x: x + vector.x * dist,
             y: y + vector.y * dist,
         };
+    }
+
+    function resolveInternalAxis(
+        previous: { x: number; y: number },
+        current: { x: number; y: number },
+        next: { x: number; y: number },
+    ) {
+        const incoming = normalizeVector(current.x - previous.x, current.y - previous.y);
+        const outgoing = normalizeVector(next.x - current.x, next.y - current.y);
+        const bisector = normalizeVector(incoming.x + outgoing.x, incoming.y + outgoing.y);
+
+        if (bisector.x !== 0 || bisector.y !== 0) {
+            return bisector;
+        }
+
+        if (outgoing.x !== 0 || outgoing.y !== 0) {
+            return outgoing;
+        }
+
+        if (incoming.x !== 0 || incoming.y !== 0) {
+            return incoming;
+        }
+
+        return normalizeVector(next.x - previous.x, next.y - previous.y);
     }
 
     function inferPathVectors(
@@ -210,7 +317,7 @@ function workerSource() {
         };
     }
 
-    function resolveQuadraticCurve(input: {
+    function resolveFixedTangentCurve(input: {
         fromX: number;
         fromY: number;
         toX: number;
@@ -221,21 +328,34 @@ function workerSource() {
         toDir?: string;
     }) {
         const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir } = input;
-        const dx = toX - fromX;
-        const dy = toY - fromY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const cpDist = Math.max(50, dist * 0.4);
         const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
-        const cubicCp1 = controlPoint(fromX, fromY, vectors.fromVector, cpDist);
-        const cubicCp2 = controlPoint(toX, toY, vectors.toVector, cpDist);
+        const startNeighbor = { x: toX - fromX, y: toY - fromY };
+        const endNeighbor = { x: fromX - toX, y: fromY - toY };
+        let startTangentLength = DEFAULT_TANGENT_RATIO * Math.sqrt(startNeighbor.x * startNeighbor.x + startNeighbor.y * startNeighbor.y);
+        let endTangentLength = DEFAULT_TANGENT_RATIO * Math.sqrt(endNeighbor.x * endNeighbor.x + endNeighbor.y * endNeighbor.y);
+        const startTheta = angleBetween(vectors.fromVector, startNeighbor);
+        const endTheta = angleBetween(vectors.toVector, endNeighbor);
+
+        if (startTheta > DEFAULT_ANGLE_THRESHOLD) {
+            startTangentLength += DEFAULT_ANGLE_BOOST * (startTheta - DEFAULT_ANGLE_THRESHOLD);
+        }
+
+        if (endTheta > DEFAULT_ANGLE_THRESHOLD) {
+            endTangentLength += DEFAULT_ANGLE_BOOST * (endTheta - DEFAULT_ANGLE_THRESHOLD);
+        }
+
+        const startControl = controlPoint(fromX, fromY, vectors.fromVector, startTangentLength * BEZIER_HANDLE_SCALE);
+        const endControl = controlPoint(toX, toY, vectors.toVector, endTangentLength * BEZIER_HANDLE_SCALE);
 
         return {
             p0x: fromX,
             p0y: fromY,
-            p1x: (-fromX + cubicCp1.x * 3 + cubicCp2.x * 3 - toX) / 4,
-            p1y: (-fromY + cubicCp1.y * 3 + cubicCp2.y * 3 - toY) / 4,
-            p2x: toX,
-            p2y: toY,
+            p1x: startControl.x,
+            p1y: startControl.y,
+            p2x: endControl.x,
+            p2y: endControl.y,
+            p3x: toX,
+            p3y: toY,
         };
     }
 
@@ -1552,9 +1672,9 @@ function workerSource() {
 
         if (type === "calculatePath") {
             const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, steps } = data;
-            const curve = resolveQuadraticCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
-            const centerD = `M ${curve.p0x} ${curve.p0y} Q ${curve.p1x} ${curve.p1y} ${curve.p2x} ${curve.p2y}`;
-            const points = sampleOffsetPoints(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, 0, steps);
+            const curve = resolveFixedTangentCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
+            const centerD = `M ${curve.p0x} ${curve.p0y} C ${curve.p1x} ${curve.p1y} ${curve.p2x} ${curve.p2y} ${curve.p3x} ${curve.p3y}`;
+            const points = sampleOffsetPoints(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, curve.p3x, curve.p3y, 0, steps);
 
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             for (const p of points) {
@@ -1571,11 +1691,11 @@ function workerSource() {
         }
         else if (type === "calculateBidirectionalPath") {
             const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, gap, steps } = data;
-            const curve = resolveQuadraticCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
-            const centerD = `M ${curve.p0x} ${curve.p0y} Q ${curve.p1x} ${curve.p1y} ${curve.p2x} ${curve.p2y}`;
+            const curve = resolveFixedTangentCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
+            const centerD = `M ${curve.p0x} ${curve.p0y} C ${curve.p1x} ${curve.p1y} ${curve.p2x} ${curve.p2y} ${curve.p3x} ${curve.p3y}`;
             const halfGap = gap / 2;
-            const fwdPoints = sampleOffsetPoints(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, -halfGap, steps);
-            const revPoints = sampleOffsetPoints(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, halfGap, steps);
+            const fwdPoints = sampleOffsetPoints(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, curve.p3x, curve.p3y, -halfGap, steps);
+            const revPoints = sampleOffsetPoints(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, curve.p3x, curve.p3y, halfGap, steps);
 
             const padding = 50 + gap;
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -1591,25 +1711,25 @@ function workerSource() {
 
             post({
                 type: "calculateBidirectionalPath", id, centerD,
-                forwardD: pointsToQuadraticPath(fwdPoints),
-                reverseD: pointsToQuadraticPath(revPoints),
+                forwardD: pointsToSplinePath(fwdPoints),
+                reverseD: pointsToSplinePath(revPoints),
                 bounds: { left: minX, top: minY, width: maxX - minX, height: maxY - minY },
             });
         }
         else if (type === "calculateLabels") {
             const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, labels } = data;
-            const curve = resolveQuadraticCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
+            const curve = resolveFixedTangentCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
 
             const TABLE_SIZE = 200;
-            const table = buildLengthTable(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, TABLE_SIZE);
+            const table = buildLengthTable(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, curve.p3x, curve.p3y, TABLE_SIZE);
             const totalLen = table[TABLE_SIZE];
 
             const positions = (labels as any[]).map((lbl: any) => {
                 const normalizedPos = Math.max(-1, Math.min(1, lbl.position));
                 const targetLen = ((normalizedPos + 1) / 2) * totalLen;
                 const t = parameterAtLength(table, targetLen);
-                const point = quadraticBezier(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, t);
-                const norm = normalAt(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, t);
+                const point = cubicBezier(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, curve.p3x, curve.p3y, t);
+                const norm = normalAt(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, curve.p3x, curve.p3y, t);
 
                 if (lbl.side === "forward" || lbl.side === "reverse") {
                     const sign = lbl.side === "forward" ? -1 : 1;
@@ -1626,18 +1746,18 @@ function workerSource() {
             post({ type: "calculateLabels", id, positions });
         } else if (type === "calculateBidirectionalLabels") {
             const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, halfGap, labels } = data;
-            const curve = resolveQuadraticCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
+            const curve = resolveFixedTangentCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
 
             const TABLE_SIZE = 200;
-            const table = buildLengthTable(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, TABLE_SIZE);
+            const table = buildLengthTable(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, curve.p3x, curve.p3y, TABLE_SIZE);
             const totalLen = table[TABLE_SIZE];
 
             const positions = (labels as any[]).map((lbl: any) => {
                 const normalizedPos = Math.max(-1, Math.min(1, lbl.position));
                 const targetLen = ((normalizedPos + 1) / 2) * totalLen;
                 const t = parameterAtLength(table, targetLen);
-                const point = quadraticBezier(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, t);
-                const norm = normalAt(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, t);
+                const point = cubicBezier(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, curve.p3x, curve.p3y, t);
+                const norm = normalAt(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, curve.p3x, curve.p3y, t);
 
                 if (lbl.side === "forward" || lbl.side === "reverse") {
                     const sign = lbl.side === "forward" ? -1 : 1;

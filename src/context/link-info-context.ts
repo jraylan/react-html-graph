@@ -15,4 +15,5 @@ export const LinkInfoContext = createContext<LinkInfoContextValue>({
     fromNodeState: null,
     data: {},
     toNodeState: null,
+    rootRef: { current: null! as HTMLDivElement },
 });
