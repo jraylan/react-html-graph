@@ -1,4 +1,4 @@
-import { GPU, type GPUInstance } from "../vendor/gpu";
+import { GPU, type GPUInstance } from "../../vendor/gpu";
 import {
     cubicBezier,
     cubicCurveToPath,
@@ -7,8 +7,8 @@ import {
     pointsToSplinePath,
     resolveFixedTangentCurve,
     type SampledPoint,
-} from "../utils/link-curve";
-import { WebWorkerProvider } from "./index";
+} from "../../utils/link-curve";
+import { WebWorkerProvider } from "./webworker-provider";
 import type {
     BidirectionalLabelsInput,
     BidirectionalPathInput,
@@ -23,7 +23,7 @@ import type {
     MathProvider,
     PathInput,
     PathOutput,
-} from "./types";
+} from "../types";
 
 type Kernel = any;
 export type GPUProviderMode = "gpu" | "webgl" | "webgl2" | "cpu";

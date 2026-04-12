@@ -1,14 +1,9 @@
 export { default, default as Graph } from "./graph";
 export {
-    calculateFitView,
-    calculateLabels,
-    calculateLayout,
-    calculatePath,
-    configureWorkerPool,
     getDefaultMathProvider,
     WebWorkerProvider,
 } from "./calculations";
-export { GPUProvider, type GPUProviderMode } from "./calculations/gpu-provider";
+export { GPUProvider, type GPUProviderMode } from "./calculations/providers/gpu-provider";
 export { ConnectionContext } from "./context/connection-context";
 export { ErrorContext } from "./context/error-context";
 export { GraphContext } from "./context/graph-context";

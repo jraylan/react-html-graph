@@ -11,7 +11,7 @@ import BidirectionalPath from "../paths/bidirectional-path";
 import useLinkInfo from "../hooks/link-info";
 import useGraphApi from "../hooks/use-graph-api";
 import { WebWorkerProvider } from "../calculations";
-import { GPUProvider, type GPUProviderMode } from "../calculations/gpu-provider";
+import { GPUProvider, type GPUProviderMode } from "../calculations/providers/gpu-provider";
 
 import MOCK_TEMPLATE from "./mock-template.json"
 import UnidirectionalPath from "../paths/unidirectional-path";
