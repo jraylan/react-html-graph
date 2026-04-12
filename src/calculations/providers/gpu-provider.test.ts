@@ -5,7 +5,7 @@ const mockCreateKernel = jest.fn();
 const mockFailingModes = new Set<string>();
 const mockInvalidModes = new Set<string>();
 
-jest.mock("../vendor/gpu", () => {
+jest.mock("../../vendor/gpu", () => {
     class MockGPU {
         static isGPUSupported = true;
         static isSinglePrecisionSupported = true;
