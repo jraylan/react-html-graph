@@ -581,7 +581,7 @@ export default function GraphTest() {
                     <button onClick={() => handleCentralize()}>Centralizar</button>
                     <button onClick={updateStateSummary}>Ler estado</button>
                     <button onClick={handleSerialize}>Serializar</button>
-                    <button onClick={() => void handleload()}>Desserializar</button>
+                    <button onClick={() => void handleload()}>Carregar</button>
                     <button onClick={() => void handleLoadMockSnapshot()}>Restaurar demo</button>
                     {LAYOUTS.map(layout => (
                         <button key={layout.algorithm.toString()} onClick={() => void handleApplyLayout(layout.algorithm)}>
