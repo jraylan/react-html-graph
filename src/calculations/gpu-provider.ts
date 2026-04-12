@@ -1,4 +1,13 @@
 import { GPU, type GPUInstance } from "../vendor/gpu";
+import {
+    cubicBezier,
+    cubicCurveToPath,
+    getBoundsFromPoints,
+    normalAt,
+    pointsToSplinePath,
+    resolveFixedTangentCurve,
+    type SampledPoint,
+} from "../utils/link-curve";
 import { WebWorkerProvider } from "./index";
 import type {
     BidirectionalLabelsInput,
@@ -14,11 +23,8 @@ import type {
     MathProvider,
     PathInput,
     PathOutput,
-    PortDirection,
 } from "./types";
 
-type Vector2Like = { x: number; y: number };
-type SampledPoint = { x: number; y: number; nx: number; ny: number };
 type Kernel = any;
 export type GPUProviderMode = "gpu" | "webgl" | "webgl2" | "cpu";
 
@@ -32,190 +38,11 @@ const GPU_SAMPLE_KERNEL_SETTINGS = {
     precision: "single" as const,
     tactic: "precision" as const,
     fixIntegerDivisionAccuracy: true,
-    argumentTypes: ["Array", "Float", "Float", "Float", "Float", "Float", "Float"],
+    argumentTypes: ["Array", "Float", "Float", "Float", "Float", "Float", "Float", "Float", "Float"],
     returnType: "Array(4)",
 };
 
 const GPU_PATH_STEPS_THRESHOLD = 12;
-
-function normalizeVector(x: number, y: number): Vector2Like {
-    const magnitude = Math.hypot(x, y);
-    if (magnitude === 0) {
-        return { x: 0, y: 0 };
-    }
-
-    return {
-        x: x / magnitude,
-        y: y / magnitude,
-    };
-}
-
-function directionToVector(dir?: PortDirection): Vector2Like {
-    switch (dir) {
-        case "right":
-            return { x: 1, y: 0 };
-        case "left":
-            return { x: -1, y: 0 };
-        case "bottom":
-            return { x: 0, y: 1 };
-        case "top":
-            return { x: 0, y: -1 };
-        default:
-            return { x: 0, y: 0 };
-    }
-}
-
-function controlPoint(x: number, y: number, vector: Vector2Like, dist: number): Vector2Like {
-    return {
-        x: x + vector.x * dist,
-        y: y + vector.y * dist,
-    };
-}
-
-function inferPathVectors(fromX: number, fromY: number, toX: number, toY: number) {
-    const dx = toX - fromX;
-    const dy = toY - fromY;
-    const forward = normalizeVector(dx, dy);
-
-    if (forward.x !== 0 || forward.y !== 0) {
-        return {
-            fromVector: forward,
-            toVector: { x: -forward.x, y: -forward.y },
-        };
-    }
-
-    return {
-        fromVector: { x: 1, y: 0 },
-        toVector: { x: -1, y: 0 },
-    };
-}
-
-function resolvePathVectors(
-    fromX: number,
-    fromY: number,
-    toX: number,
-    toY: number,
-    fromVector?: Vector2Like,
-    toVector?: Vector2Like,
-    fromDir?: PortDirection,
-    toDir?: PortDirection,
-) {
-    const inferred = inferPathVectors(fromX, fromY, toX, toY);
-    const resolvedFromVector = fromVector && (fromVector.x !== 0 || fromVector.y !== 0)
-        ? normalizeVector(fromVector.x, fromVector.y)
-        : fromDir
-            ? directionToVector(fromDir)
-            : inferred.fromVector;
-    const resolvedToVector = toVector && (toVector.x !== 0 || toVector.y !== 0)
-        ? normalizeVector(toVector.x, toVector.y)
-        : toDir
-            ? directionToVector(toDir)
-            : inferred.toVector;
-
-    return {
-        fromVector: resolvedFromVector,
-        toVector: resolvedToVector,
-    };
-}
-
-function quadraticBezier(
-    p0x: number,
-    p0y: number,
-    p1x: number,
-    p1y: number,
-    p2x: number,
-    p2y: number,
-    t: number,
-) {
-    const t1 = 1 - t;
-    return {
-        x: t1 * t1 * p0x + 2 * t1 * t * p1x + t * t * p2x,
-        y: t1 * t1 * p0y + 2 * t1 * t * p1y + t * t * p2y,
-    };
-}
-
-function quadraticBezierTangent(
-    p0x: number,
-    p0y: number,
-    p1x: number,
-    p1y: number,
-    p2x: number,
-    p2y: number,
-    t: number,
-) {
-    const t1 = 1 - t;
-    return {
-        x: 2 * t1 * (p1x - p0x) + 2 * t * (p2x - p1x),
-        y: 2 * t1 * (p1y - p0y) + 2 * t * (p2y - p1y),
-    };
-}
-
-function normalAt(
-    p0x: number,
-    p0y: number,
-    p1x: number,
-    p1y: number,
-    p2x: number,
-    p2y: number,
-    t: number,
-): Vector2Like {
-    const tangent = quadraticBezierTangent(p0x, p0y, p1x, p1y, p2x, p2y, t);
-    const magnitude = Math.hypot(tangent.x, tangent.y) || 1;
-    return {
-        x: -tangent.y / magnitude,
-        y: tangent.x / magnitude,
-    };
-}
-
-function pointsToQuadraticPath(points: Array<{ x: number; y: number }>) {
-    if (points.length < 2) return "";
-
-    let d = `M ${points[0].x} ${points[0].y}`;
-    if (points.length === 2) {
-        const controlX = (points[0].x + points[1].x) / 2;
-        const controlY = (points[0].y + points[1].y) / 2;
-        return `${d} Q ${controlX} ${controlY} ${points[1].x} ${points[1].y}`;
-    }
-
-    for (let index = 1; index < points.length - 1; index++) {
-        const control = points[index];
-        const next = points[index + 1];
-        const midpointX = (control.x + next.x) / 2;
-        const midpointY = (control.y + next.y) / 2;
-        d += ` Q ${control.x} ${control.y} ${midpointX} ${midpointY}`;
-    }
-
-    const lastControl = points[points.length - 2];
-    const lastPoint = points[points.length - 1];
-    d += ` Q ${lastControl.x} ${lastControl.y} ${lastPoint.x} ${lastPoint.y}`;
-
-    return d;
-}
-
-function getBoundsFromPoints(points: Array<{ x: number; y: number }>) {
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-
-    for (const point of points) {
-        minX = Math.min(minX, point.x);
-        minY = Math.min(minY, point.y);
-        maxX = Math.max(maxX, point.x);
-        maxY = Math.max(maxY, point.y);
-    }
-
-    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
-        return { left: 0, top: 0, width: 0, height: 0 };
-    }
-
-    return {
-        left: minX,
-        top: minY,
-        width: Math.max(0, maxX - minX),
-        height: Math.max(0, maxY - minY),
-    };
-}
 
 function getLayoutBounds(nodes: LayoutNodeInput[]) {
     if (nodes.length === 0) {
@@ -243,39 +70,6 @@ function getLayoutBounds(nodes: LayoutNodeInput[]) {
         top,
         width: Math.max(0, right - left),
         height: Math.max(0, bottom - top),
-    };
-}
-
-function resolveQuadraticCurve(input: {
-    fromX: number;
-    fromY: number;
-    toX: number;
-    toY: number;
-    fromVector?: Vector2Like;
-    toVector?: Vector2Like;
-    fromDir?: PortDirection;
-    toDir?: PortDirection;
-}) {
-    const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir } = input;
-    const dx = toX - fromX;
-    const dy = toY - fromY;
-    const distance = Math.hypot(dx, dy);
-    const controlDistance = Math.max(50, distance * 0.4);
-    const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
-    const cubicCp1 = controlPoint(fromX, fromY, vectors.fromVector, controlDistance);
-    const cubicCp2 = controlPoint(toX, toY, vectors.toVector, controlDistance);
-    const control = {
-        x: (-fromX + cubicCp1.x * 3 + cubicCp2.x * 3 - toX) / 4,
-        y: (-fromY + cubicCp1.y * 3 + cubicCp2.y * 3 - toY) / 4,
-    };
-
-    return {
-        p0x: fromX,
-        p0y: fromY,
-        p1x: control.x,
-        p1y: control.y,
-        p2x: toX,
-        p2y: toY,
     };
 }
 
@@ -340,24 +134,38 @@ export class GPUProvider implements MathProvider {
             p1y: number,
             p2x: number,
             p2y: number,
+            p3x: number,
+            p3y: number,
         ) {
             const t = ts[this.thread.x];
             const t1 = 1 - t;
-            const x = t1 * t1 * p0x + 2 * t1 * t * p1x + t * t * p2x;
-            const y = t1 * t1 * p0y + 2 * t1 * t * p1y + t * t * p2y;
-            const tx = 2 * t1 * (p1x - p0x) + 2 * t * (p2x - p1x);
-            const ty = 2 * t1 * (p1y - p0y) + 2 * t * (p2y - p1y);
+            const x = t1 * t1 * t1 * p0x
+                + 3 * t1 * t1 * t * p1x
+                + 3 * t1 * t * t * p2x
+                + t * t * t * p3x;
+            const y = t1 * t1 * t1 * p0y
+                + 3 * t1 * t1 * t * p1y
+                + 3 * t1 * t * t * p2y
+                + t * t * t * p3y;
+            const tx = 3 * t1 * t1 * (p1x - p0x)
+                + 6 * t1 * t * (p2x - p1x)
+                + 3 * t * t * (p3x - p2x);
+            const ty = 3 * t1 * t1 * (p1y - p0y)
+                + 6 * t1 * t * (p2y - p1y)
+                + 3 * t * t * (p3y - p2y);
 
             return [x, y, tx, ty];
         }, GPU_SAMPLE_KERNEL_SETTINGS) as Kernel;
 
         if (mode !== "cpu") {
             const validationIssue = this.getSampleValidationIssue(
-                this.executeSampleCurve(10.5, 12.25, 68.75, -18.5, 147.875, 64.5, 17),
+                this.executeSampleCurve(10.5, 12.25, 44.5, -18.5, 108.25, 96.75, 147.875, 64.5, 17),
                 10.5,
                 12.25,
-                68.75,
+                44.5,
                 -18.5,
+                108.25,
+                96.75,
                 147.875,
                 64.5,
             );
@@ -498,9 +306,11 @@ export class GPUProvider implements MathProvider {
         p1y: number,
         p2x: number,
         p2y: number,
+        p3x: number,
+        p3y: number,
         size: number,
     ): SampledPoint[] {
-        const vectors = this.readSampleKernel([p0x, p0y, p1x, p1y, p2x, p2y], size);
+        const vectors = this.readSampleKernel([p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y], size);
         const samples: SampledPoint[] = [];
 
         for (let index = 0; index < size; index++) {
@@ -538,6 +348,8 @@ export class GPUProvider implements MathProvider {
         p1y: number,
         p2x: number,
         p2y: number,
+        p3x: number,
+        p3y: number,
     ) {
         if (samples.length < 2) {
             return `quantidade insuficiente de amostras: ${samples.length}.`;
@@ -561,10 +373,10 @@ export class GPUProvider implements MathProvider {
         if (
             Math.abs(first.x - p0x) > tolerance
             || Math.abs(first.y - p0y) > tolerance
-            || Math.abs(last.x - p2x) > tolerance
-            || Math.abs(last.y - p2y) > tolerance
+            || Math.abs(last.x - p3x) > tolerance
+            || Math.abs(last.y - p3y) > tolerance
         ) {
-            return `extremos divergiram: início ${this.formatPoint(first.x, first.y)} esperado ${this.formatPoint(p0x, p0y)}; fim ${this.formatPoint(last.x, last.y)} esperado ${this.formatPoint(p2x, p2y)}.`;
+            return `extremos divergiram: início ${this.formatPoint(first.x, first.y)} esperado ${this.formatPoint(p0x, p0y)}; fim ${this.formatPoint(last.x, last.y)} esperado ${this.formatPoint(p3x, p3y)}.`;
         }
 
         const lastIndex = samples.length - 1;
@@ -581,8 +393,9 @@ export class GPUProvider implements MathProvider {
 
             const sample = samples[index];
             const t = index / lastIndex;
-            const expectedPoint = quadraticBezier(p0x, p0y, p1x, p1y, p2x, p2y, t);
-            const expectedNormal = normalAt(p0x, p0y, p1x, p1y, p2x, p2y, t);
+            const expectedCurve = { p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y };
+            const expectedPoint = cubicBezier(expectedCurve, t);
+            const expectedNormal = normalAt(expectedCurve, t);
             const positionTolerance = 2;
             const normalTolerance = 0.35;
 
@@ -608,8 +421,8 @@ export class GPUProvider implements MathProvider {
         samples: SampledPoint[],
         p0x: number,
         p0y: number,
-        p2x: number,
-        p2y: number,
+        p3x: number,
+        p3y: number,
     ) {
         if (samples.length < 2) {
             return `quantidade insuficiente de amostras: ${samples.length}.`;
@@ -633,10 +446,10 @@ export class GPUProvider implements MathProvider {
         if (
             Math.abs(first.x - p0x) > tolerance
             || Math.abs(first.y - p0y) > tolerance
-            || Math.abs(last.x - p2x) > tolerance
-            || Math.abs(last.y - p2y) > tolerance
+            || Math.abs(last.x - p3x) > tolerance
+            || Math.abs(last.y - p3y) > tolerance
         ) {
-            return `extremos divergiram: início ${this.formatPoint(first.x, first.y)} esperado ${this.formatPoint(p0x, p0y)}; fim ${this.formatPoint(last.x, last.y)} esperado ${this.formatPoint(p2x, p2y)}.`;
+            return `extremos divergiram: início ${this.formatPoint(first.x, first.y)} esperado ${this.formatPoint(p0x, p0y)}; fim ${this.formatPoint(last.x, last.y)} esperado ${this.formatPoint(p3x, p3y)}.`;
         }
 
         return null;
@@ -650,8 +463,10 @@ export class GPUProvider implements MathProvider {
         p1y: number,
         p2x: number,
         p2y: number,
+        p3x: number,
+        p3y: number,
     ) {
-        const integrityIssue = this.getSampleIntegrityIssue(samples, p0x, p0y, p2x, p2y);
+        const integrityIssue = this.getSampleIntegrityIssue(samples, p0x, p0y, p3x, p3y);
         if (integrityIssue) {
             return integrityIssue;
         }
@@ -661,7 +476,7 @@ export class GPUProvider implements MathProvider {
         }
 
         this.runtimeValidationCount += 1;
-        return this.getSampleValidationIssue(samples, p0x, p0y, p1x, p1y, p2x, p2y);
+        return this.getSampleValidationIssue(samples, p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y);
     }
 
     private sampleCurve(
@@ -671,14 +486,16 @@ export class GPUProvider implements MathProvider {
         p1y: number,
         p2x: number,
         p2y: number,
+        p3x: number,
+        p3y: number,
         steps: number,
     ): SampledPoint[] {
         const safeSteps = Math.max(1, Math.floor(steps));
         const size = safeSteps + 1;
         try {
             this.setup();
-            const samples = this.executeSampleCurve(p0x, p0y, p1x, p1y, p2x, p2y, size);
-            const validationIssue = this.getRuntimeSampleIssue(samples, p0x, p0y, p1x, p1y, p2x, p2y);
+            const samples = this.executeSampleCurve(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, size);
+            const validationIssue = this.getRuntimeSampleIssue(samples, p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y);
             if (validationIssue) {
                 throw new Error(`GPUProvider gerou amostras inválidas para a curva. ${validationIssue}`);
             }
@@ -686,8 +503,8 @@ export class GPUProvider implements MathProvider {
             return samples;
         } catch (error) {
             this.rebuildInCpuMode(error);
-            const samples = this.executeSampleCurve(p0x, p0y, p1x, p1y, p2x, p2y, size);
-            const validationIssue = this.getSampleIntegrityIssue(samples, p0x, p0y, p2x, p2y);
+            const samples = this.executeSampleCurve(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, size);
+            const validationIssue = this.getSampleIntegrityIssue(samples, p0x, p0y, p3x, p3y);
             if (validationIssue) {
                 throw new Error(`GPUProvider gerou amostras inválidas mesmo após fallback para CPU. ${validationIssue}`);
             }
@@ -701,7 +518,7 @@ export class GPUProvider implements MathProvider {
             return this.ensureWorkerFallbackProvider().calculatePath(input);
         }
 
-        const curve = resolveQuadraticCurve(input);
+        const curve = resolveFixedTangentCurve(input);
         const samples = this.sampleCurve(
             curve.p0x,
             curve.p0y,
@@ -709,12 +526,14 @@ export class GPUProvider implements MathProvider {
             curve.p1y,
             curve.p2x,
             curve.p2y,
+            curve.p3x,
+            curve.p3y,
             input.steps,
         );
         const bounds = getBoundsFromPoints(samples);
 
         return {
-            pathD: `M ${curve.p0x} ${curve.p0y} Q ${curve.p1x} ${curve.p1y} ${curve.p2x} ${curve.p2y}`,
+            pathD: cubicCurveToPath(curve),
             bounds,
         };
     }
@@ -724,7 +543,7 @@ export class GPUProvider implements MathProvider {
             return this.ensureWorkerFallbackProvider().calculateBidirectionalPath(input);
         }
 
-        const curve = resolveQuadraticCurve(input);
+        const curve = resolveFixedTangentCurve(input);
         const samples = this.sampleCurve(
             curve.p0x,
             curve.p0y,
@@ -732,6 +551,8 @@ export class GPUProvider implements MathProvider {
             curve.p1y,
             curve.p2x,
             curve.p2y,
+            curve.p3x,
+            curve.p3y,
             input.steps,
         );
         const halfGap = input.gap / 2;
@@ -747,9 +568,9 @@ export class GPUProvider implements MathProvider {
         const padding = 50 + input.gap;
 
         return {
-            centerD: `M ${curve.p0x} ${curve.p0y} Q ${curve.p1x} ${curve.p1y} ${curve.p2x} ${curve.p2y}`,
-            forwardD: pointsToQuadraticPath(forwardPoints),
-            reverseD: pointsToQuadraticPath(reversePoints),
+            centerD: cubicCurveToPath(curve),
+            forwardD: pointsToSplinePath(forwardPoints),
+            reverseD: pointsToSplinePath(reversePoints),
             bounds: {
                 left: bounds.left - padding,
                 top: bounds.top - padding,

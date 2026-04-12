@@ -511,6 +511,7 @@ export interface LinkInfoContextValue<T = any> {
     fromAnchor: GraphLinkAnchor | null;
     /** Âncora geométrica atual do destino. */
     toAnchor: GraphLinkAnchor | null;
+    rootRef: React.RefObject<HTMLDivElement>;
     /** Getter estável para ler a âncora viva de origem sem rerender. */
     getFromAnchor?: () => GraphLinkAnchor | null;
     /** Getter estável para ler a âncora viva de destino sem rerender. */

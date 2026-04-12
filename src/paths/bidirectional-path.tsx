@@ -30,6 +30,7 @@ export type BidirectionalPathProps = {
     forwardDuration?: number;
     reverseDuration?: number;
     steps?: number;
+    rootRef: React.RefObject<HTMLDivElement>;
 }
 
 export default function BidirectionalPath({
@@ -47,9 +48,10 @@ export default function BidirectionalPath({
     gapSize = 10,
     forwardDuration = 1,
     reverseDuration = 1,
+    rootRef,
     steps = BIDIRECTIONAL_PATH_STEPS,
 }: BidirectionalPathProps) {
-    const rootRef = useRef<SVGSVGElement>(null);
+    const svgRef = useRef<SVGSVGElement>(null);
     const forwardRef = useRef<SVGPathElement>(null);
     const reverseRef = useRef<SVGPathElement>(null);
     const labelGroupRef = useRef<SVGGElement>(null);
@@ -59,7 +61,6 @@ export default function BidirectionalPath({
     const fwdDashOffset = useRef(0);
     const revDashOffset = useRef(0);
     const cycleLenRef = useRef(0);
-
     const fwdW = forwardWidth ?? width;
     const revW = reverseWidth ?? width;
     const gap = spacing / getZoom();
@@ -68,10 +69,11 @@ export default function BidirectionalPath({
 
     // Calcula paths e labels no worker e atualiza DOM diretamente (sem React render)
     const runCalculation = useCallback(() => {
+        const svg = svgRef.current;
         const root = rootRef.current;
         const fwd = forwardRef.current;
         const rev = reverseRef.current;
-        if (!root || !fwd || !rev) return;
+        if (!svg || !fwd || !rev) return;
 
         const resolvedFrom = liveAnchors?.getFrom() ?? from;
         const resolvedTo = liveAnchors?.getTo() ?? to;
@@ -118,7 +120,7 @@ export default function BidirectionalPath({
             root.style.width = bounds.width + "px";
             root.style.height = bounds.height + "px";
 
-            root.setAttribute("viewBox", `${bounds.left} ${bounds.top} ${bounds.width} ${bounds.height}`);
+            svg.setAttribute("viewBox", `${bounds.left} ${bounds.top} ${bounds.width} ${bounds.height}`);
             fwd.setAttribute("d", forwardD);
             rev.setAttribute("d", reverseD);
 
@@ -138,13 +140,14 @@ export default function BidirectionalPath({
                 }
             }
         });
-    }, [from, gap, labels, liveAnchors, mathProvider, steps, to, getZoom]);
+    }, [from, gap, labels, liveAnchors, mathProvider, steps, to, getZoom, rootRef]);
 
     const runLiveCalculation = useCallback(() => {
-        const root = rootRef.current;
+        const svg = svgRef.current;
         const fwd = forwardRef.current;
         const rev = reverseRef.current;
-        if (!root || !fwd || !rev) return;
+        const root = rootRef.current;
+        if (!svg || !fwd || !rev) return;
 
         const resolvedFrom = liveAnchors?.getFrom() ?? from;
         const resolvedTo = liveAnchors?.getTo() ?? to;
@@ -161,7 +164,7 @@ export default function BidirectionalPath({
         root.style.top = result.bounds.top + "px";
         root.style.width = result.bounds.width + "px";
         root.style.height = result.bounds.height + "px";
-        root.setAttribute("viewBox", `${result.bounds.left} ${result.bounds.top} ${result.bounds.width} ${result.bounds.height}`);
+        svg.setAttribute("viewBox", `${result.bounds.left} ${result.bounds.top} ${result.bounds.width} ${result.bounds.height}`);
         fwd.setAttribute("d", result.forwardD);
         rev.setAttribute("d", result.reverseD);
 
@@ -189,7 +192,7 @@ export default function BidirectionalPath({
                 }
             });
         }
-    }, [from, gap, labels, liveAnchors, steps, to]);
+    }, [from, gap, labels, liveAnchors, steps, to, rootRef]);
 
     useEffect(() => {
         runCalculation();
@@ -262,7 +265,7 @@ export default function BidirectionalPath({
 
 
     return (
-        <svg ref={rootRef}>
+        <svg ref={svgRef} style={{ position: "relative", left: 0, top: 0, width: "100%", height: "100%" }}>
             <path
                 ref={forwardRef}
                 d=""

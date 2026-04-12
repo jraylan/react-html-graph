@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useRef } from "react";
 import { GraphLinkProps, LinkInfoContextValue } from "../types";
 import LinkInfoProvider from "../providers/link-info-provider";
 import useLinkInfo from "../hooks/link-info";
@@ -17,14 +17,23 @@ const MemoizedGraphLink = memo(function GraphLink({
     template,
     data,
 }: GraphLinkProps) {
+    const linkRef = useRef<HTMLDivElement>(null!);
     return (
-        <node-graph-link>
+        <node-graph-link
+            ref={linkRef}
+            link-id={id}
+            from-node={from.node}
+            to-node={to.node}
+            from-port={from.port}
+            to-port={to.port}
+        >
             <LinkInfoProvider
                 id={id}
                 from={from}
                 to={to}
                 onStateChange={onStateChange}
                 data={data}
+                rootRef={linkRef}
             >
                 <LinkContent template={template} />
             </LinkInfoProvider>

@@ -272,7 +272,7 @@ function calcularDuracaoAnimacao(ping: number) {
     // nem mais lenta que 1.0s
     return Math.min(duracao, 2.0);
 }
-function LinkPath({ uni = false }: { uni?: boolean }) {
+function LinkPath({ uni = false, rootRef }: { uni?: boolean, rootRef: React.RefObject<HTMLDivElement> }) {
 
     const {
         data,
@@ -307,6 +307,7 @@ function LinkPath({ uni = false }: { uni?: boolean }) {
             <UnidirectionalPath
                 from={fromAnchor}
                 to={toAnchor}
+                rootRef={rootRef}
                 liveAnchors={getFromAnchor && getToAnchor && subscribePositionChanges
                     ? {
                         getFrom: getFromAnchor,
@@ -337,6 +338,7 @@ function LinkPath({ uni = false }: { uni?: boolean }) {
                 }
                 : undefined
             }
+            rootRef={rootRef}
             data={data}
             width={width}
             spacing={2 * width}
@@ -420,9 +422,9 @@ export default function GraphTest() {
                     template: NodeTemplate
                 }
             );
-            api.setDefaultLinkTemplate(() => <LinkPath />);
-            api.registerLinkTemplate("ftth", () => <LinkPath uni />);
-            api.registerLinkTemplate("ether", () => <LinkPath />);
+            api.setDefaultLinkTemplate(({ rootRef }) => <LinkPath rootRef={rootRef} />);
+            api.registerLinkTemplate("ftth", ({ rootRef }) => <LinkPath rootRef={rootRef} uni />);
+            api.registerLinkTemplate("ether", ({ rootRef }) => <LinkPath rootRef={rootRef} />);
 
             const snapshot = createMockSnapshot();
             api.load(snapshot);

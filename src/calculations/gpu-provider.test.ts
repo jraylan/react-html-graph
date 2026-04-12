@@ -27,7 +27,7 @@ jest.mock("../vendor/gpu", () => {
 
                 const output = runner.__output ?? [0];
                 const parameters = _args[0] as unknown as ArrayLike<number>;
-                const [p0x, p0y, p1x, p1y, p2x, p2y] = _args.slice(1).map(value => Number(value ?? 0));
+                const [p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y] = _args.slice(1).map(value => Number(value ?? 0));
 
                 return Array.from({ length: output[0] ?? 0 }, (_value, index) => {
                     if (mockInvalidModes.has(this.mode)) {
@@ -36,10 +36,20 @@ jest.mock("../vendor/gpu", () => {
 
                     const t = Number(parameters[index] ?? 0);
                     const t1 = 1 - t;
-                    const x = t1 * t1 * p0x + 2 * t1 * t * p1x + t * t * p2x;
-                    const y = t1 * t1 * p0y + 2 * t1 * t * p1y + t * t * p2y;
-                    const tx = 2 * t1 * (p1x - p0x) + 2 * t * (p2x - p1x);
-                    const ty = 2 * t1 * (p1y - p0y) + 2 * t * (p2y - p1y);
+                    const x = t1 * t1 * t1 * p0x
+                        + 3 * t1 * t1 * t * p1x
+                        + 3 * t1 * t * t * p2x
+                        + t * t * t * p3x;
+                    const y = t1 * t1 * t1 * p0y
+                        + 3 * t1 * t1 * t * p1y
+                        + 3 * t1 * t * t * p2y
+                        + t * t * t * p3y;
+                    const tx = 3 * t1 * t1 * (p1x - p0x)
+                        + 6 * t1 * t * (p2x - p1x)
+                        + 3 * t * t * (p3x - p2x);
+                    const ty = 3 * t1 * t1 * (p1y - p0y)
+                        + 6 * t1 * t * (p2y - p1y)
+                        + 3 * t * t * (p3y - p2y);
 
                     return new Float32Array([x, y, tx, ty]);
                 });
@@ -83,7 +93,7 @@ describe("GPUProvider", () => {
             steps: 16,
         });
 
-        expect(result.centerD).toContain("M 0 0 Q");
+        expect(result.centerD).toContain("M 0 0 C");
         expect(provider.getExecutionMode()).toBe("webgl");
         expect(mockCreateKernel).toHaveBeenCalledWith("webgl2", expect.objectContaining({
             precision: "single",
@@ -91,7 +101,7 @@ describe("GPUProvider", () => {
             dynamicArguments: true,
             dynamicOutput: true,
             returnType: "Array(4)",
-            argumentTypes: ["Array", "Float", "Float", "Float", "Float", "Float", "Float"],
+            argumentTypes: ["Array", "Float", "Float", "Float", "Float", "Float", "Float", "Float", "Float"],
         }));
         expect(mockCreateKernel).toHaveBeenCalledWith("webgl", expect.objectContaining({
             precision: "single",
@@ -99,7 +109,7 @@ describe("GPUProvider", () => {
             dynamicArguments: true,
             dynamicOutput: true,
             returnType: "Array(4)",
-            argumentTypes: ["Array", "Float", "Float", "Float", "Float", "Float", "Float"],
+            argumentTypes: ["Array", "Float", "Float", "Float", "Float", "Float", "Float", "Float", "Float"],
         }));
         expect(mockCreateKernel.mock.calls.some(([mode]) => mode === "cpu")).toBe(false);
 
@@ -122,7 +132,7 @@ describe("GPUProvider", () => {
             steps: 16,
         });
 
-        expect(result.centerD).toContain("M 0 0 Q");
+        expect(result.centerD).toContain("M 0 0 C");
         expect(provider.getExecutionMode()).toBe("cpu");
         expect(mockCreateKernel.mock.calls.some(([mode]) => mode === "cpu")).toBe(true);
 
