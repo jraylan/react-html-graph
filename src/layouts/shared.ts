@@ -1,4 +1,5 @@
-import { calculateLayout } from "../calculations";
+import { getDefaultMathProvider } from "../calculations";
+import type { MathProvider } from "../calculations/types";
 import { GraphLayoutBuiltinAlgorithm, GraphLayoutInput, GraphLayoutResult } from "../types";
 
 
@@ -12,8 +13,9 @@ import { GraphLayoutBuiltinAlgorithm, GraphLayoutInput, GraphLayoutResult } from
 export async function runLayoutAlgorithm(
     algorithm: GraphLayoutBuiltinAlgorithm,
     input: GraphLayoutInput,
+    mathProvider: MathProvider = getDefaultMathProvider(),
 ): Promise<GraphLayoutResult> {
-    const result = await calculateLayout({
+    const result = await mathProvider.calculateLayout({
         algorithm,
         nodes: input.nodes.map(node => ({
             id: node.id,

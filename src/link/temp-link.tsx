@@ -1,16 +1,18 @@
 import { useCallback, useContext, useEffect, useRef, useSyncExternalStore } from "react";
-import { calculatePath } from "../calculations";
 import { ConnectionContext } from "../context/connection-context";
 import useLinkAnchors from "../hooks/link-anchors";
+import useMathProvider from "../hooks/math-provider";
 import useNodeRegistry from "../hooks/node-registry";
 import useViewbox from "../hooks/viewbox";
 import { TempLinkInfoContextValue, TempLinkProps } from "../types";
 import { buildCursorAnchor, buildLinkAnchor } from "../utils/link-geometry";
 
+const TEMP_LINK_PATH_STEPS = 5;
+
 
 /**
  * Componente que renderiza um link temporário enquanto o usuário arrasta uma
- * conexão entre portas. Desenha uma curva Bezier entre a posição da porta
+ * conexão entre portas. Desenha uma curva quadrática entre a posição da porta
  * origem e o cursor.
  *
  * @returns JSX.Element | null
@@ -66,6 +68,7 @@ function DefaultTempLinkPath() {
     const { getTempLinkState, subscribeTempLink, getPortRegistration } = useContext(ConnectionContext);
     const registry = useNodeRegistry();
     const viewbox = useViewbox();
+    const mathProvider = useMathProvider();
     const rootRef = useRef<SVGSVGElement>(null);
     const pathRef = useRef<SVGPathElement>(null);
     const calcVersionRef = useRef(0);
@@ -111,14 +114,14 @@ function DefaultTempLinkPath() {
         }
 
         const version = ++calcVersionRef.current;
-        calculatePath({
+        mathProvider.calculatePath({
             fromX: fromAnchor.x,
             fromY: fromAnchor.y,
             toX: toAnchor.x,
             toY: toAnchor.y,
             fromVector: fromAnchor.d,
             toVector: toAnchor.d,
-            steps: 60,
+            steps: TEMP_LINK_PATH_STEPS,
         }).then(result => {
             if (version !== calcVersionRef.current) return;
 
@@ -129,7 +132,7 @@ function DefaultTempLinkPath() {
             root.setAttribute("viewBox", `${result.bounds.left} ${result.bounds.top} ${result.bounds.width} ${result.bounds.height}`);
             path.setAttribute("d", result.pathD);
         });
-    }, [clearPath, getPortRegistration, getTempLinkState, registry]);
+    }, [clearPath, getPortRegistration, getTempLinkState, mathProvider, registry]);
 
     useEffect(() => {
         redraw();

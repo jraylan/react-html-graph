@@ -27,15 +27,6 @@ graph-root {
 
 
 
-@keyframes graph-link-flow {
-    from {
-        stroke-dashoffset: 0;
-    }
-
-    to {
-        stroke-dashoffset: var(--cycle-len);
-    }
-}
 
 node-graph-link,
 node-graph-node {
@@ -65,9 +56,6 @@ node-graph-link>svg {
 }
 
 node-graph-link>svg path {
-    animation-name: graph-link-flow;
-    animation-timing-function: linear;
-    animation-iteration-count: infinite;
     transition: stroke 0.3s ease, stroke-width 0.15s ease;
 }
 

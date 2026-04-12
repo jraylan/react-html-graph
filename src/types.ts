@@ -1,3 +1,5 @@
+import type { MathProvider } from "./calculations/types";
+
 /**
  * Tipos compartilhados do projeto (ordenados alfabeticamente).
  *
@@ -112,6 +114,10 @@ export interface GraphApi {
     serialize(): GraphSerializedState;
     /** Restaura nós e links do grafo a partir de um snapshot ou JSON serializado. */
     load(input: GraphSerializedState | string): void;
+    /** Retorna o provider matemático atualmente configurado na API. */
+    getMathProvider(): MathProvider;
+    /** Substitui o provider matemático atual, descartando o anterior. */
+    setMathProvider(provider: MathProvider): Promise<void>;
     /** Registra um tipo de nó com portas e template opcionais. */
     registerNodeType(name: string, definition: NodeTypeDefinition): void;
     /** Define o template padrão para nós sem template específico no tipo. */
@@ -505,6 +511,10 @@ export interface LinkInfoContextValue<T = any> {
     fromAnchor: GraphLinkAnchor | null;
     /** Âncora geométrica atual do destino. */
     toAnchor: GraphLinkAnchor | null;
+    /** Getter estável para ler a âncora viva de origem sem rerender. */
+    getFromAnchor?: () => GraphLinkAnchor | null;
+    /** Getter estável para ler a âncora viva de destino sem rerender. */
+    getToAnchor?: () => GraphLinkAnchor | null;
     /** Elemento DOM do nó de origem (node-graph-object). */
     fromNode: HTMLElement | null;
     /** Elemento DOM da porta de origem (node-graph-port). */
@@ -517,6 +527,12 @@ export interface LinkInfoContextValue<T = any> {
     fromNodeState: GraphNodeRuntimeState | null;
     /** Estado runtime do nó de destino. */
     toNodeState: GraphNodeRuntimeState | null;
+    /** Getter estável para ler o estado runtime vivo do nó de origem. */
+    getFromNodeState?: () => GraphNodeRuntimeState | null;
+    /** Getter estável para ler o estado runtime vivo do nó de destino. */
+    getToNodeState?: () => GraphNodeRuntimeState | null;
+    /** Assina mudanças transitórias de posição/âncoras sem acionar rerender. */
+    subscribePositionChanges?: (listener: (phase?: "live" | "commit") => void) => () => void;
     /** Callback para reportar o estado runtime do link. */
     data: T
     onStateChange?: (state: GraphLinkRuntimeState) => void;
@@ -733,6 +749,11 @@ export interface GraphMoveEvent {
     readonly type: "move";
     readonly nodeId: string;
     readonly position: Point3D;
+    /**
+     * Indica se o evento representa uma atualização transitória durante o drag
+     * (`live`) ou a posição consolidada ao final do movimento (`commit`).
+     */
+    readonly phase?: "live" | "commit";
 }
 
 /**

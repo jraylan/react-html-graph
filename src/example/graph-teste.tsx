@@ -10,8 +10,18 @@ import {
 import BidirectionalPath from "../paths/bidirectional-path";
 import useLinkInfo from "../hooks/link-info";
 import useGraphApi from "../hooks/use-graph-api";
+import { WebWorkerProvider } from "../calculations";
+import { GPUProvider, type GPUProviderMode } from "../calculations/gpu-provider";
 
 import MOCK_TEMPLATE from "./mock-template.json"
+import UnidirectionalPath from "../paths/unidirectional-path";
+
+type ProviderKind = "webworker" | "gpu";
+
+const PROVIDER_OPTIONS: Array<{ value: ProviderKind; label: string }> = [
+    { value: "webworker", label: "Web Worker" },
+    { value: "gpu", label: "GPU.js" },
+];
 
 const LAYOUTS: Array<{ label: string; algorithm: GraphApplyLayoutInput["algorithm"] }> = [
     { label: "Força direcional", algorithm: "force-direction" },
@@ -21,6 +31,35 @@ const LAYOUTS: Array<{ label: string; algorithm: GraphApplyLayoutInput["algorith
     { label: "Estrutural", algorithm: "structural" },
     { label: "Árvore", algorithm: "tree" },
 ];
+
+function formatGpuProviderMode(mode: GPUProviderMode | null) {
+    switch (mode) {
+        case "webgl2":
+            return "WebGL2";
+        case "webgl":
+            return "WebGL";
+        case "gpu":
+            return "GPU";
+        case "cpu":
+            return "CPU";
+        default:
+            return "desconhecido";
+    }
+}
+
+function formatGpuProviderStatus(provider: GPUProvider) {
+    const mode = provider.getExecutionMode();
+
+    if (!mode) {
+        return "Provider atual: GPU.js adaptativo; paths leves, labels e layout usam worker. O backend GPU só inicializa quando houver path pesado.";
+    }
+
+    if (mode === "cpu") {
+        return "Provider atual: GPU.js em fallback CPU; paths leves, labels e layout continuam no worker.";
+    }
+
+    return `Provider atual: GPU.js pronto em ${formatGpuProviderMode(mode)} para paths mais pesados; paths leves, labels e layout continuam no worker para proteger o FPS.`;
+}
 
 function getLayoutOptions(algorithm: GraphApplyLayoutInput["algorithm"]) {
     switch (algorithm) {
@@ -233,9 +272,18 @@ function calcularDuracaoAnimacao(ping: number) {
     // nem mais lenta que 1.0s
     return Math.min(duracao, 2.0);
 }
-function LinkPath() {
+function LinkPath({ uni = false }: { uni?: boolean }) {
 
-    const { data, fromAnchor, toAnchor, fromNodeState, toNodeState } = useLinkInfo<typeof MOCK_TEMPLATE['links'][number]['data']>()
+    const {
+        data,
+        fromAnchor,
+        toAnchor,
+        fromNodeState,
+        toNodeState,
+        getFromAnchor,
+        getToAnchor,
+        subscribePositionChanges,
+    } = useLinkInfo<typeof MOCK_TEMPLATE['links'][number]['data']>()
     if (!data || !fromAnchor || !toAnchor) return null;
 
     const offline = fromNodeState?.data?.status === "offline" || toNodeState?.data?.status === "offline";
@@ -254,11 +302,41 @@ function LinkPath() {
             : lerp(1, 2, bw / 10000000000);
 
 
+    if (uni) {
+        return (
+            <UnidirectionalPath
+                from={fromAnchor}
+                to={toAnchor}
+                liveAnchors={getFromAnchor && getToAnchor && subscribePositionChanges
+                    ? {
+                        getFrom: getFromAnchor,
+                        getTo: getToAnchor,
+                        subscribe: subscribePositionChanges,
+                    }
+                    : undefined
+                }
+                color={color}
+                data={data}
+                width={width}
+                animationDuration={duration} labels={[
+                    { text: data.latency.toFixed(0) + `ms (${duration.toFixed(2)}s)`, position: 0, color: "#fff", fontSize: 14 },
+                    { text: data.bw, position: -0.2, color: "#fff", fontSize: 14 },
+                    { text: data.usage + '%', position: 0.2, color: "#fff", fontSize: 14 },
+                ]}
+            />)
+    }
     return (
-
         <BidirectionalPath
             from={fromAnchor}
             to={toAnchor}
+            liveAnchors={getFromAnchor && getToAnchor && subscribePositionChanges
+                ? {
+                    getFrom: getFromAnchor,
+                    getTo: getToAnchor,
+                    subscribe: subscribePositionChanges,
+                }
+                : undefined
+            }
             data={data}
             width={width}
             spacing={2 * width}
@@ -283,11 +361,15 @@ export default function GraphTest() {
     const fpsRef = useRef<HTMLSpanElement>(null);
     const fpsCountRef = useRef<number>(0);
     const lastTimeRef = useRef<number>(0);
+    const initialMathProviderRef = useRef(new WebWorkerProvider());
     const [stateSummary, setStateSummary] = useState("Nós: 0 | Links: 0");
     const [serializedGraph, setSerializedGraph] = useState("");
     const [serializationStatus, setSerializationStatus] = useState("Use os botões abaixo para serializar ou restaurar o snapshot do grafo.");
+    const [providerKind, setProviderKind] = useState<ProviderKind>("webworker");
+    const [providerStatus, setProviderStatus] = useState("Provider atual: Web Worker.");
 
     const graphApi = useGraphApi({
+        mathProvider: initialMathProviderRef.current,
         onReady: async (api) => {
             handleLoadMockSnapshot();
             api.setDefaultNodeTemplate(NodeTemplate);
@@ -338,8 +420,8 @@ export default function GraphTest() {
                     template: NodeTemplate
                 }
             );
-            api.setDefaultLinkTemplate(LinkPath);
-            api.registerLinkTemplate("ftth", () => <LinkPath />);
+            api.setDefaultLinkTemplate(() => <LinkPath />);
+            api.registerLinkTemplate("ftth", () => <LinkPath uni />);
             api.registerLinkTemplate("ether", () => <LinkPath />);
 
             const snapshot = createMockSnapshot();
@@ -351,6 +433,24 @@ export default function GraphTest() {
         // defaultNodeTemplate: (props) => <NodeTemplate {...props} />, // Optional
         // defaultLinkTemplate: (props) => <LinkPath {...props} />, // Optional
     });
+
+    const handleProviderChange = useCallback(async (nextProviderKind: ProviderKind) => {
+        if (nextProviderKind === providerKind) {
+            return;
+        }
+
+        const nextProvider = nextProviderKind === "gpu"
+            ? new GPUProvider()
+            : new WebWorkerProvider();
+
+        const nextProviderStatus = nextProvider instanceof GPUProvider
+            ? formatGpuProviderStatus(nextProvider)
+            : "Provider atual: Web Worker.";
+
+        await graphApi.setMathProvider(nextProvider);
+        setProviderKind(nextProviderKind);
+        setProviderStatus(nextProviderStatus);
+    }, [graphApi, providerKind]);
 
     const updateStateSummary = useCallback(() => {
         const api = graphApi;
@@ -452,6 +552,30 @@ export default function GraphTest() {
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem", fontSize: "0.75rem", color: "#aaa", padding: "0.75rem", borderBottom: "1px solid #1a1a1a", backgroundColor: "#050505" }}>
                     <span ref={fpsRef} />
                     <span>{stateSummary}</span>
+                    <div style={{ flex: 1, width: "0px" }} />
+                    <span style={{ color: "#8ab4f8" }}>{providerStatus}</span>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                        <span>Provider:</span>
+                        <select
+                            value={providerKind}
+                            onChange={(event) => void handleProviderChange(event.target.value as ProviderKind)}
+                            style={{
+                                border: "1px solid #1f1f1f",
+                                borderRadius: "0.35rem",
+                                backgroundColor: "#0a0a0a",
+                                color: "#d7d7d7",
+                                padding: "0.25rem 0.5rem",
+                            }}
+                        >
+                            {PROVIDER_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "0.5rem", fontSize: "0.75rem", color: "#aaa", padding: "0.75rem", borderBottom: "1px solid #1a1a1a", backgroundColor: "#050505" }}>
                     <button onClick={() => handleCentralize()}>Centralizar</button>
                     <button onClick={updateStateSummary}>Ler estado</button>
                     <button onClick={handleSerialize}>Serializar</button>
@@ -464,7 +588,6 @@ export default function GraphTest() {
                     ))}
                 </div>
                 <div style={{ display: "grid", gap: "0.5rem", padding: "0.75rem", borderBottom: "1px solid #1a1a1a", backgroundColor: "#070707" }}>
-                    <span style={{ fontSize: "0.75rem", color: "#8ab4f8" }}>{serializationStatus}</span>
                     <textarea
                         value={serializedGraph}
                         onChange={(event) => setSerializedGraph(event.target.value)}
@@ -485,6 +608,7 @@ export default function GraphTest() {
                             boxSizing: "border-box",
                         }}
                     />
+                    <span style={{ fontSize: "0.75rem", color: "#8ab4f8" }}>{serializationStatus}</span>
                 </div>
                 <div className="graph-test-graph">
                     <Graph

@@ -1,4 +1,6 @@
 import { useRef } from "react";
+import { WebWorkerProvider } from "../calculations";
+import type { MathProvider } from "../calculations/types";
 import type {
     GraphApi,
     NodeTypeDefinition,
@@ -36,10 +38,16 @@ export interface GraphApiInternal extends GraphApi {
     _onReady: ((api: GraphApi) => Promise<void>) | null;
     /** Callback chamado sempre que um snapshot é carregado via load(). */
     _onLoad: ((api: GraphApi) => Promise<void>) | null;
+    /** Provider matemático atualmente associado à API. */
+    _mathProvider: MathProvider;
+    /** Assinantes de mudança de provider matemático. */
+    _mathProviderListeners: Set<(provider: MathProvider) => void>;
     /** Vincula implementações reais vindas do Graph. */
     _bind(impl: GraphApiBindings): void;
     /** Desvincula implementações ao desmontar o Graph. */
     _unbind(): void;
+    /** Assina mudanças do provider matemático atual. */
+    _subscribeMathProvider(listener: (provider: MathProvider) => void): () => void;
 }
 
 /** Métodos injetados pelo Graph via _bind. */
@@ -63,6 +71,8 @@ export interface UseGraphApiOptions {
     /** Chamado uma vez quando o Graph monta e conecta a API. */
     onReady?: (api: GraphApi) => Promise<void>;
     onLoad?: (api: GraphApi) => Promise<void>;
+    /** Provider matemático inicial usado pelos cálculos do grafo. */
+    mathProvider?: MathProvider;
 }
 
 /** No-op para métodos ainda não conectados. */
@@ -71,12 +81,18 @@ const NOOP_ARRAY = () => [] as any[];
 const NOOP_PROMISE = () => Promise.resolve({} as any);
 const NOOP_SERIALIZE = () => ({ nodes: [], links: [] } as GraphSerializedState);
 
-function createGraphApiInternal(
+function createDefaultMathProvider(): MathProvider {
+    return new WebWorkerProvider();
+}
+
+export function createGraphApiInternal(
     onReady: ((api: GraphApi) => Promise<void>) | null,
     onLoad: ((api: GraphApi) => Promise<void>) | null,
+    mathProvider: MathProvider,
 ): GraphApiInternal {
     const nodeTypeRegistry = new Map<string, NodeTypeDefinition>();
     const linkTemplateRegistry = new Map<string, (props: LinkInfoContextValue) => React.ReactNode>();
+    const mathProviderListeners = new Set<(provider: MathProvider) => void>();
 
     const api: GraphApiInternal = {
         // Registros — funcionam imediatamente
@@ -88,6 +104,8 @@ function createGraphApiInternal(
         _connected: false,
         _onReady: onReady,
         _onLoad: onLoad,
+        _mathProvider: mathProvider,
+        _mathProviderListeners: mathProviderListeners,
 
         registerNodeType(name: string, definition: NodeTypeDefinition) {
             nodeTypeRegistry.set(name, definition);
@@ -119,6 +137,26 @@ function createGraphApiInternal(
         applyLayout: NOOP_PROMISE,
         serialize: NOOP_SERIALIZE,
         load: NOOP,
+        getMathProvider() {
+            return api._mathProvider;
+        },
+        async setMathProvider(provider: MathProvider) {
+            if (provider === api._mathProvider) {
+                return;
+            }
+
+            const previousProvider = api._mathProvider;
+            api._mathProvider = provider;
+            api._mathProviderListeners.forEach(listener => listener(provider));
+
+            await Promise.resolve(previousProvider.dispose());
+        },
+        _subscribeMathProvider(listener: (provider: MathProvider) => void) {
+            api._mathProviderListeners.add(listener);
+            return () => {
+                api._mathProviderListeners.delete(listener);
+            };
+        },
 
         _bind(impl: GraphApiBindings) {
             api.addNode = impl.addNode;
@@ -175,6 +213,14 @@ function createGraphApiInternal(
     return api;
 }
 
+export function createGraphApi(options?: UseGraphApiOptions): GraphApi {
+    return createGraphApiInternal(
+        options?.onReady ?? null,
+        options?.onLoad ?? null,
+        options?.mathProvider ?? createDefaultMathProvider(),
+    );
+}
+
 /**
  * Hook que cria um objeto de API estável para o grafo.
  * O objeto retornado nunca muda de identidade — métodos de manipulação
@@ -186,7 +232,7 @@ function createGraphApiInternal(
 export default function useGraphApi(options?: UseGraphApiOptions): GraphApi {
     const apiRef = useRef<GraphApiInternal>(null);
     if (!apiRef.current) {
-        apiRef.current = createGraphApiInternal(options?.onReady ?? null, options?.onLoad ?? null);
+        apiRef.current = createGraphApi(options) as GraphApiInternal;
     }
     return apiRef.current;
 }

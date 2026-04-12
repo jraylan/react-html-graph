@@ -1,4 +1,4 @@
-import { Vector2 } from "../types";
+import type { Vector2 } from "../types";
 
 export type PortDirection = "left" | "right" | "top" | "bottom";
 
@@ -152,3 +152,19 @@ export type MessageEventData =
     | EventPayload<"calculateLayout", LayoutInput>
     | EventPayload<"calculateFitView", FitViewInput>
     ;
+
+
+
+export interface MathProvider {
+    setup(): void | Promise<void>;
+    calculatePath(input: PathInput): Promise<PathOutput>;
+    calculateBidirectionalPath(input: BidirectionalPathInput): Promise<BidirectionalPathOutput>;
+    calculateLabels(input: LabelsInput): Promise<LabelOutput[]>;
+    calculateBidirectionalLabels(input: BidirectionalLabelsInput): Promise<LabelOutput[]>;
+    calculateLayout(input: LayoutInput): Promise<LayoutOutput>;
+    calculateFitView(input: FitViewInput): Promise<FitViewOutput>;
+    dispose(): void | Promise<void>;
+}
+
+// Compatibilidade retroativa com a grafia anterior.
+export type MathPrivider = MathProvider;

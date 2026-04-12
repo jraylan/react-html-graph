@@ -38,7 +38,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
         return () => registry.unregisterNodeElement(id);
     }, [id, registry]);
 
-    const reportState = useCallback((nextPosition: Point3D) => {
+    const reportState = useCallback((nextPosition: Point3D, phase: "live" | "commit" = "commit") => {
         if (!ref.current) return;
         const state: GraphNodeRuntimeState<T> = {
             id,
@@ -50,7 +50,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
         // Atualiza o registry centralizado
         registry.updateNodeState(state);
         // Emite evento de movimento no bus centralizado
-        eventBus.emit(id, "move", { position: nextPosition });
+        eventBus.emit(id, "move", { position: nextPosition, phase });
         // Reporta via callback do Graph
         onStateChange?.(state);
     }, [data, id, onStateChange, registry, eventBus]);
@@ -71,7 +71,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
         mode,
         position,
         onMoveEnd: handleMoveEnd,
-        onMoving: reportState,
+        onMoving: (nextPosition) => reportState(nextPosition, "live"),
         eventEmitter,
     });
 
@@ -80,7 +80,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
         ref.current.style.left = `${position.x.toFixed(0)}px`;
         ref.current.style.top = `${position.y.toFixed(0)}px`;
         ref.current.style.zIndex = position.z.toFixed(0);
-        reportState(position);
+        reportState(position, "commit");
     }, [position, reportState]);
 
     const portsByLocation = useMemo<PortsByLocation>(() => {
@@ -129,13 +129,15 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     useEffect(() => {
         if (!ref.current || !onStateChange) return;
         const observer = new ResizeObserver(() => {
-            reportState(moveRef.current.moving
-                ? {
-                    x: moveRef.current.currentPos.x,
-                    y: moveRef.current.currentPos.y,
-                    z: position.z,
-                }
-                : position
+            reportState(
+                moveRef.current.moving
+                    ? {
+                        x: moveRef.current.currentPos.x,
+                        y: moveRef.current.currentPos.y,
+                        z: position.z,
+                    }
+                    : position,
+                moveRef.current.moving ? "live" : "commit",
             );
         });
         observer.observe(ref.current);

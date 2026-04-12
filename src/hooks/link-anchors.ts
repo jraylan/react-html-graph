@@ -14,13 +14,14 @@ interface LinkAnchorsInput {
     reportOrphans?: boolean;
 }
 
-interface LinkAnchorsState {
+interface LinkAnchorsSnapshot {
     fromAnchor: GraphLinkAnchor | null;
     toAnchor: GraphLinkAnchor | null;
     fromNodeState: GraphNodeRuntimeState | null;
     toNodeState: GraphNodeRuntimeState | null;
     invalid: boolean;
 }
+
 
 function areAnchorsEqual(left: GraphLinkAnchor | null, right: GraphLinkAnchor | null) {
     if (left === right) return true;
@@ -35,7 +36,7 @@ function areAnchorsEqual(left: GraphLinkAnchor | null, right: GraphLinkAnchor | 
     );
 }
 
-function areStatesEqual(left: LinkAnchorsState, right: LinkAnchorsState) {
+function areStatesEqual(left: LinkAnchorsSnapshot, right: LinkAnchorsSnapshot) {
     return (
         left.invalid === right.invalid
         && left.fromNodeState === right.fromNodeState
@@ -63,26 +64,53 @@ export default function useLinkAnchors({
     const eventBus = useGraphEventBus();
     const { reportError } = useGraphError();
     const { getPortRegistration, portRegistryVersion } = useContext(ConnectionContext);
-    const [state, setState] = useState<LinkAnchorsState>({
+    const [snapshot, setSnapshot] = useState<LinkAnchorsSnapshot>({
         fromAnchor: null,
         toAnchor: null,
         fromNodeState: null,
         toNodeState: null,
         invalid: true,
     });
+    const liveStateRef = useRef<LinkAnchorsSnapshot>({
+        fromAnchor: null,
+        toAnchor: null,
+        fromNodeState: null,
+        toNodeState: null,
+        invalid: true,
+    });
+    const listenersRef = useRef(new Set<(phase?: "live" | "commit") => void>());
     const lastErrorKeyRef = useRef<string | null>(null);
     const canReportOrphansRef = useRef(false);
 
-    const resolveAnchors = useCallback(() => {
+    const getFromAnchor = useCallback(() => liveStateRef.current.fromAnchor, []);
+    const getToAnchor = useCallback(() => liveStateRef.current.toAnchor, []);
+    const getFromNodeState = useCallback(() => liveStateRef.current.fromNodeState, []);
+    const getToNodeState = useCallback(() => liveStateRef.current.toNodeState, []);
+    const subscribePositionChanges = useCallback((listener: (phase?: "live" | "commit") => void) => {
+        listenersRef.current.add(listener);
+        return () => {
+            listenersRef.current.delete(listener);
+        };
+    }, []);
+
+    const resolveAnchors = useCallback((phase: "live" | "commit" = "commit") => {
         if (!from.node || !from.port) {
             lastErrorKeyRef.current = null;
-            setState(prev => prev.invalid && !prev.fromAnchor && !prev.toAnchor ? prev : {
+            const emptyState: LinkAnchorsSnapshot = {
                 fromAnchor: null,
                 toAnchor: null,
                 fromNodeState: null,
                 toNodeState: null,
                 invalid: true,
-            });
+            };
+            const changed = !areStatesEqual(liveStateRef.current, emptyState);
+            if (changed) {
+                liveStateRef.current = emptyState;
+                listenersRef.current.forEach(listener => listener(phase));
+            }
+            if (phase !== "live") {
+                setSnapshot(prev => areStatesEqual(prev, emptyState) ? prev : emptyState);
+            }
             return;
         }
 
@@ -137,7 +165,7 @@ export default function useLinkAnchors({
             lastErrorKeyRef.current = nextErrorKey;
         }
 
-        const nextState: LinkAnchorsState = {
+        const nextState: LinkAnchorsSnapshot = {
             fromAnchor,
             toAnchor,
             fromNodeState,
@@ -145,7 +173,15 @@ export default function useLinkAnchors({
             invalid,
         };
 
-        setState(prev => areStatesEqual(prev, nextState) ? prev : nextState);
+        const changed = !areStatesEqual(liveStateRef.current, nextState);
+        if (changed) {
+            liveStateRef.current = nextState;
+            listenersRef.current.forEach(listener => listener(phase));
+        }
+
+        if (phase !== "live") {
+            setSnapshot(prev => areStatesEqual(prev, nextState) ? prev : nextState);
+        }
     }, [
         cursorPosition,
         from.node,
@@ -162,13 +198,15 @@ export default function useLinkAnchors({
         if (!from.node || !from.port) return;
 
         canReportOrphansRef.current = false;
-        resolveAnchors();
+        resolveAnchors("commit");
 
         const frameId = requestAnimationFrame(() => {
             canReportOrphansRef.current = true;
-            resolveAnchors();
+            resolveAnchors("commit");
         });
-        const handleMove = () => resolveAnchors();
+        const handleMove = (event: { phase?: "live" | "commit" }) => {
+            resolveAnchors(event.phase === "live" ? "live" : "commit");
+        };
 
         eventBus.subscribe(from.node, "move", handleMove);
         if (to?.node) {
@@ -186,8 +224,15 @@ export default function useLinkAnchors({
     }, [eventBus, from.node, from.port, portRegistryVersion, resolveAnchors, to?.node]);
 
     useEffect(() => {
-        resolveAnchors();
+        resolveAnchors("commit");
     }, [resolveAnchors]);
 
-    return state;
+    return {
+        ...snapshot,
+        getFromAnchor,
+        getToAnchor,
+        getFromNodeState,
+        getToNodeState,
+        subscribePositionChanges,
+    };
 }
