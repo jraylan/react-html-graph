@@ -163,7 +163,6 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
             const itr = e[0];
             let isVisible = !itr.isIntersecting;
             if (isVisible !== visibilityRef.current) {
-                console.log(e)
                 eventEmitter?.("visibilityChange", {
                     isVisible: visibilityRef.current,
                     boundingClientRect: itr.boundingClientRect.toJSON(),
