@@ -60,7 +60,8 @@
   "overrides": {
     "react-scripts": {
       "typescript": "^6.0.2"
-    }
+    },
+    "gl": "file:stubs/gl"
   },
   "browserslist": {
     "production": [
