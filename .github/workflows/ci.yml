@@ -10,6 +10,7 @@ jobs:
             - uses: actions/setup-node@v4
               with:
                   node-version: "24"
+            - run: apt install mesa-common-dev libxi-dev
             - run: npm ci
             - run: npm test -- --passWithNoTests
               env:
