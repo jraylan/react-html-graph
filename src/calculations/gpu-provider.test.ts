@@ -2,8 +2,8 @@ import { GPUProvider } from "./gpu-provider";
 
 const mockGpuDestroy = jest.fn();
 const mockCreateKernel = jest.fn();
-const failingModes = new Set<string>();
-const invalidModes = new Set<string>();
+const mockFailingModes = new Set<string>();
+const mockInvalidModes = new Set<string>();
 
 jest.mock("../vendor/gpu", () => {
     class MockGPU {
@@ -21,7 +21,7 @@ jest.mock("../vendor/gpu", () => {
             mockCreateKernel(this.mode, settings);
 
             const runner: any = (..._args: unknown[]) => {
-                if (failingModes.has(this.mode)) {
+                if (mockFailingModes.has(this.mode)) {
                     throw new Error(`backend failure: ${this.mode}`);
                 }
 
@@ -30,7 +30,7 @@ jest.mock("../vendor/gpu", () => {
                 const [p0x, p0y, p1x, p1y, p2x, p2y] = _args.slice(1).map(value => Number(value ?? 0));
 
                 return Array.from({ length: output[0] ?? 0 }, (_value, index) => {
-                    if (invalidModes.has(this.mode)) {
+                    if (mockInvalidModes.has(this.mode)) {
                         return new Float32Array([Number.NaN, Number.NaN, Number.NaN, Number.NaN]);
                     }
 
@@ -65,13 +65,13 @@ jest.mock("../vendor/gpu", () => {
 describe("GPUProvider", () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        failingModes.clear();
-        invalidModes.clear();
+        mockFailingModes.clear();
+        mockInvalidModes.clear();
     });
 
     it("tenta outro backend GPU antes de cair para CPU", async () => {
         const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => { });
-        invalidModes.add("webgl2");
+        mockInvalidModes.add("webgl2");
         const provider = new GPUProvider();
 
         const result = await provider.calculateBidirectionalPath({
@@ -108,9 +108,9 @@ describe("GPUProvider", () => {
 
     it("faz fallback para CPU quando todos os backends GPU falham", async () => {
         const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => { });
-        invalidModes.add("webgl2");
-        invalidModes.add("webgl");
-        invalidModes.add("gpu");
+        mockInvalidModes.add("webgl2");
+        mockInvalidModes.add("webgl");
+        mockInvalidModes.add("gpu");
         const provider = new GPUProvider();
 
         const result = await provider.calculateBidirectionalPath({
