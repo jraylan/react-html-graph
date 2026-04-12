@@ -2,7 +2,7 @@
   "packages": {
     ".": {
       "changelog-path": "CHANGELOG.md",
-      "versioning": "always-bump-patch",
+      "versioning": "default",
       "draft": false,
       "prerelease": false
     }
