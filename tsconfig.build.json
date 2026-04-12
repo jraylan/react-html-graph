@@ -9,6 +9,7 @@
     "noEmit": false
   },
   "include": [
+    "src/**/*.d.ts",
     "src/**/*.ts",
     "src/style.css",
     "src/**/*.tsx",
