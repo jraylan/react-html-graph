@@ -9,6 +9,7 @@ import type {
     NodeEventMap,
     NodeEventProviderProps,
     PortConnection,
+    VisibilityChangeEvent,
 } from "../types";
 import { createReadonlyProxy } from "../utils/proxy";
 import { NodeEventContext } from "../context/node-event-context";
@@ -59,6 +60,23 @@ const EVENT_CLASS_MAP: { [K in keyof NodeEventMap]: new (nodeId: string, payload
         constructor(nodeId: string, payload: Omit<GraphNodeSelectionChangeEvent, "type" | "nodeId">) {
             this.nodeId = nodeId;
             this.selected = payload.selected;
+        }
+    },
+    visibilityChange: class VisibilityChangeEventImpl implements VisibilityChangeEvent {
+        readonly type = "visibilityChange";
+        readonly nodeId: string
+        readonly isVisible: boolean;
+        readonly boundingClientRect: DOMRectReadOnly;
+        readonly intersectionRatio: number;
+        readonly intersectionRect: DOMRectReadOnly;
+        readonly rootBounds: DOMRectReadOnly;
+        constructor(nodeId: string, payload: Omit<NodeEventMap["visibilityChange"], "type" | "nodeId">) {
+            this.nodeId = nodeId;
+            this.isVisible = payload.isVisible;
+            this.boundingClientRect = payload.boundingClientRect;
+            this.intersectionRatio = payload.intersectionRatio;
+            this.intersectionRect = payload.intersectionRect;
+            this.rootBounds = payload.rootBounds;
         }
     },
 };

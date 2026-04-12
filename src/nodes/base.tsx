@@ -5,6 +5,7 @@ import { NodeEventProvider } from "../providers/node-event-context";
 import { useMoveBehaviour } from "../behaviour/move-behaviour";
 import useNodeRegistry from "../hooks/node-registry";
 import useGraphEventBus from "../hooks/graph-event-bus";
+import { useGraphRoot } from "../module";
 
 /**
  * Componente que representa um objeto/nó do grafo. Gerencia posicionamento,
@@ -26,10 +27,12 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     onStateChange,
 }: GraphObjectProps<T>) {
     const ref = useRef<HTMLDivElement>(null);
+    const root = useGraphRoot();
     const registry = useNodeRegistry();
     const eventBus = useGraphEventBus();
     const [eventEmitter, setEmitter] = useState<NodeEventEmitter | null>(null);
     const [position, setPosition] = useState<Point3D>(() => initialPosition ?? { x: 0, y: 0, z: 0 });
+    const visibilityRef = useRef(false);
 
     // Registra/desregistra o elemento DOM do nó no NodeRegistry
     useEffect(() => {
@@ -151,6 +154,32 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
             eventEmitter("dataChange", { data });
         }
     }, [eventBus, eventEmitter, data, id]);
+
+
+    useEffect(() => {
+        if (!ref.current || !root.current) return;
+        const observer = new IntersectionObserver((e) => {
+            if (!ref.current) return;
+            const itr = e[0];
+            let isVisible = !itr.isIntersecting;
+            if (isVisible !== visibilityRef.current) {
+                console.log(e)
+                eventEmitter?.("visibilityChange", {
+                    isVisible: visibilityRef.current,
+                    boundingClientRect: itr.boundingClientRect.toJSON(),
+                    intersectionRatio: itr.intersectionRatio,
+                    intersectionRect: itr.intersectionRect.toJSON(),
+                    rootBounds: itr.rootBounds?.toJSON(),
+                });
+            }
+            visibilityRef.current = isVisible;
+        }, {
+            root: root.current,
+        });
+        observer.observe(ref.current!);
+        return () => observer.disconnect();
+    }, [root, eventEmitter]);
+
 
     return <node-graph-object
         key={id}

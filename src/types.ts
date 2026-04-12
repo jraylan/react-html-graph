@@ -777,6 +777,19 @@ export interface GraphNodeSelectionChangeEvent {
 }
 
 /**
+ * Evento disparado quando a visibilidade de um nó muda.
+ */
+export interface VisibilityChangeEvent {
+    readonly type: "visibilityChange";
+    readonly nodeId: string;
+    readonly isVisible: boolean;
+    readonly boundingClientRect: DOMRectReadOnly;
+    readonly intersectionRatio: number;
+    readonly intersectionRect: DOMRectReadOnly;
+    readonly rootBounds: DOMRectReadOnly;
+}
+
+/**
  * União discriminada de todos os eventos locais de um nó.
  */
 export type NodeEvent =
@@ -784,6 +797,7 @@ export type NodeEvent =
     | GraphMoveEvent
     | ConnectionChangeEvent
     | GraphNodeSelectionChangeEvent
+    | VisibilityChangeEvent
     ;
 
 /**
@@ -794,6 +808,7 @@ export type NodeEventMap = {
     move: GraphMoveEvent;
     connectionChange: ConnectionChangeEvent;
     select: GraphNodeSelectionChangeEvent;
+    visibilityChange: VisibilityChangeEvent;
 }
 
 
