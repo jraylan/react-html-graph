@@ -43,6 +43,9 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Install libs
+        run: apt install mesa-common-dev libxi-dev
+
       - name: Install dependencies
         run: npm ci
 
