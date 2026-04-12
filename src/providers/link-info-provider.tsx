@@ -1,7 +1,9 @@
-import { memo, useMemo } from "react";
+import { memo, useEffect, useMemo } from "react";
 import { LinkInfoContext } from "../context/link-info-context";
 import { GraphLinkRuntimeState, LinkInfoContextValue } from "../types";
 import useNodeRegistry from "../hooks/node-registry";
+import useLinkAnchors from "../hooks/link-anchors";
+import { vectorToRuntimeDirection } from "../utils/link-geometry";
 
 interface LinkInfoProviderProps<T = any> {
     id: string;
@@ -26,6 +28,38 @@ const LinkInfoProvider = memo(function LinkInfoProvider({
     children,
 }: LinkInfoProviderProps) {
     const registry = useNodeRegistry();
+    const { fromAnchor, toAnchor, fromNodeState, toNodeState, invalid } = useLinkAnchors({
+        id,
+        from,
+        to,
+        reportOrphans: true,
+    });
+
+    useEffect(() => {
+        if (!onStateChange) return;
+
+        const state: GraphLinkRuntimeState = {
+            id,
+            from: {
+                nodeId: from.node,
+                portId: from.port,
+                x: fromAnchor?.x ?? 0,
+                y: fromAnchor?.y ?? 0,
+                direction: vectorToRuntimeDirection(fromAnchor?.d ?? { x: 1, y: 0 }),
+            },
+            to: {
+                nodeId: to.node,
+                portId: to.port,
+                x: toAnchor?.x ?? 0,
+                y: toAnchor?.y ?? 0,
+                direction: vectorToRuntimeDirection(toAnchor?.d ?? { x: -1, y: 0 }),
+            },
+            bounds: { left: 0, top: 0, width: 0, height: 0 },
+            invalid,
+        };
+
+        onStateChange(state);
+    }, [from.node, from.port, fromAnchor, id, invalid, onStateChange, to.node, to.port, toAnchor]);
 
     // Valor do contexto com getters para evitar re-renders ao mover nós.
     // Os getters consultam o registry que usa refs internas,
@@ -35,14 +69,16 @@ const LinkInfoProvider = memo(function LinkInfoProvider({
         from,
         to,
         data,
+        fromAnchor,
+        toAnchor,
         get fromNode() { return registry.getNodeElement(from.node); },
         get fromPort() { return registry.getPortElement(from.node, from.port); },
         get toNode() { return registry.getNodeElement(to.node); },
         get toPort() { return registry.getPortElement(to.node, to.port); },
-        get fromNodeState() { return registry.getNodeState(from.node); },
-        get toNodeState() { return registry.getNodeState(to.node); },
+        fromNodeState,
+        toNodeState,
         onStateChange,
-    }), [id, from, to, data, onStateChange, registry]);
+    }), [data, from, fromAnchor, fromNodeState, id, onStateChange, registry, to, toAnchor, toNodeState]);
 
     return (
         <LinkInfoContext.Provider value={value}>

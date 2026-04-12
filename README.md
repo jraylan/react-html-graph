@@ -80,10 +80,14 @@ function DeviceNode({ data, ports }: NodeObjectTemplateProps<DeviceData>) {
 }
 
 function DefaultLink() {
-  const { data } = useLinkInfo<EdgeData>();
+  const { data, fromAnchor, toAnchor } = useLinkInfo<EdgeData>();
+
+  if (!fromAnchor || !toAnchor) return null;
 
   return (
     <BidirectionalPath
+      from={fromAnchor}
+      to={toAnchor}
       width={2}
       spacing={4}
       forwardColor="#22c55e"
@@ -215,16 +219,20 @@ Inside a node template, `ports` are grouped by location:
 
 ## Rendering links
 
-Link templates can use `useLinkInfo()` to access the current link state, node state, DOM references, and custom link data.
+Link templates can use `useLinkInfo()` to access the current link state, node state, DOM references, resolved anchors, and custom link data.
 
 ```tsx
 function CustomLink() {
-  const { id, from, to, fromNodeState, toNodeState, data } = useLinkInfo<{
+  const { fromAnchor, toAnchor, data } = useLinkInfo<{
     latency: number;
   }>();
 
+  if (!fromAnchor || !toAnchor) return null;
+
   return (
     <BidirectionalPath
+      from={fromAnchor}
+      to={toAnchor}
       width={2}
       spacing={4}
       forwardColor="#38bdf8"

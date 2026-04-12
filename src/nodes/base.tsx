@@ -1,8 +1,6 @@
 import { useRef, useState, useCallback, useEffect, useMemo, memo } from "react";
-import useGraphMode from "../hooks/graph-mode";
 import { GraphNodeRuntimeState, GraphObjectProps, NodeEventEmitter, Point3D, PortsByLocation } from "../types";
 import GraphPort from "../ports/base";
-import useGetZoom from "../hooks/get-zoom";
 import { NodeEventProvider } from "../providers/node-event-context";
 import { useMoveBehaviour } from "../behaviour/move-behaviour";
 import useNodeRegistry from "../hooks/node-registry";
@@ -19,6 +17,8 @@ import useGraphEventBus from "../hooks/graph-event-bus";
 const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     children,
     id,
+    mode,
+    getZoom,
     ports,
     data,
     initialPosition,
@@ -26,8 +26,6 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     onStateChange,
 }: GraphObjectProps<T>) {
     const ref = useRef<HTMLDivElement>(null);
-    const getZoom = useGetZoom();
-    const mode = useGraphMode();
     const registry = useNodeRegistry();
     const eventBus = useGraphEventBus();
     const [eventEmitter, setEmitter] = useState<NodeEventEmitter | null>(null);
@@ -95,6 +93,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
                 <GraphPort
                     key={port.id}
                     connectionType={port.connectionType}
+                    mode={mode}
                     id={port.id}
                     nodeId={id}
                     direction={port.direction}
@@ -114,7 +113,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
         }
 
         return result;
-    }, [ports, id]);
+    }, [ports, id, mode]);
 
     useEffect(() => {
         if (initialPosition) {

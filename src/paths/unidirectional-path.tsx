@@ -1,88 +1,63 @@
-import { useRef, useCallback, useEffect } from "react";
-import { calculateBidirectionalPath, calculateBidirectionalLabels } from "../calculations";
+import { useRef, useEffectEvent, useEffect } from "react";
+import { calculatePath, calculateLabels } from "../calculations";
 import { useViewbox } from "../module";
-import { BidirectionalLinkLabel, GraphLinkAnchor } from "../types";
+import { GraphLinkAnchor, LinkLabel } from "../types";
 
-type StandardTextAnchor = "start" | "middle" | "end" | undefined;
-
-export type BidirectionalPathProps = {
+export type UnidirectionalPathProps = {
     from: GraphLinkAnchor;
     to: GraphLinkAnchor;
     data?: unknown;
     width?: number;
-    forwardWidth?: number;
-    reverseWidth?: number;
-    spacing?: number;
-    labels?: BidirectionalLinkLabel[];
-    forwardColor?: string;
-    reverseColor?: string;
+    labels?: LinkLabel[];
+    color?: string;
     dashSize?: number;
-    gapSize?: number;
-    forwardDuration?: number;
-    reverseDuration?: number;
+    animationDuration?: number;
 }
 
-export default function BidirectionalPath({
+export default function UnidirectionalPath({
     from,
     to,
     width = 3,
-    forwardWidth,
-    reverseWidth,
-    spacing,
     labels,
-    forwardColor = "#888",
-    reverseColor = "#888",
+    color = "#888",
     dashSize = 12,
-    gapSize = 8,
-    forwardDuration = 1,
-    reverseDuration = 1,
-}: BidirectionalPathProps) {
+    animationDuration = 1,
+}: UnidirectionalPathProps) {
     const rootRef = useRef<SVGSVGElement>(null);
-    const forwardRef = useRef<SVGPathElement>(null);
-    const reverseRef = useRef<SVGPathElement>(null);
+    const pRef = useRef<SVGPathElement>(null);
     const labelGroupRef = useRef<SVGGElement>(null);
     const viewbox = useViewbox();
-
-    const fwdW = forwardWidth ?? width;
-    const revW = reverseWidth ?? width;
-    const gap = spacing ?? (fwdW + revW) / 2 + 1;
-
     const calcVersionRef = useRef(0);
 
     // Calcula paths e labels no worker e atualiza DOM diretamente (sem React render)
-    const runCalculation = useCallback(() => {
+    const runCalculation = useEffectEvent(() => {
         const root = rootRef.current;
-        const fwd = forwardRef.current;
-        const rev = reverseRef.current;
-        if (!root || !fwd || !rev) return;
+        const p = pRef.current;
+        if (!root || !p) return;
 
         const version = ++calcVersionRef.current;
-        const halfGap = gap / 2;
 
         const labelInputs = labels?.map(lbl => ({
             position: lbl.position ?? 0,
-            side: lbl.textAnchor === "forward" || lbl.textAnchor === "reverse" ? lbl.textAnchor : "",
             offset: lbl.offset ?? 0,
         }));
 
-        const pathPromise = calculateBidirectionalPath({
+        const pathPromise = calculatePath({
             fromX: from.x, fromY: from.y,
             toX: to.x, toY: to.y,
             fromVector: from.d,
             toVector: to.d,
-            gap,
             steps: 60,
         });
 
         const labelsPromise = labelInputs?.length
-            ? calculateBidirectionalLabels({
+            ? calculateLabels({
                 fromX: from.x,
                 fromY: from.y,
                 toX: to.x,
                 toY: to.y,
                 fromVector: from.d,
                 toVector: to.d,
-                halfGap,
                 labels: labelInputs,
             })
             : Promise.resolve(null);
@@ -91,15 +66,15 @@ export default function BidirectionalPath({
             // Descarta resultado obsoleto
             if (version !== calcVersionRef.current) return;
 
-            const { bounds, forwardD, reverseD } = pathResult;
+            const { bounds, pathD } = pathResult;
+
             root.style.left = bounds.left + "px";
             root.style.top = bounds.top + "px";
             root.style.width = bounds.width + "px";
             root.style.height = bounds.height + "px";
 
             root.setAttribute("viewBox", `${bounds.left} ${bounds.top} ${bounds.width} ${bounds.height}`);
-            fwd.setAttribute("d", forwardD);
-            rev.setAttribute("d", reverseD);
+            p.setAttribute("d", pathD);
 
             if (labelResult) {
                 const labelGroup = labelGroupRef.current;
@@ -117,54 +92,35 @@ export default function BidirectionalPath({
                 }
             }
         });
-    }, [from, gap, labels, to]);
+    });
 
     useEffect(() => {
         runCalculation();
     }, [runCalculation]);
 
-    const fwdStroke = fwdW / viewbox.zoom;
-    const revStroke = revW / viewbox.zoom;
+    const pStroke = width / viewbox.zoom;
     const scaledDash = dashSize / viewbox.zoom;
-    const scaledGap = (gapSize / viewbox.zoom ** 2);
-    const dashPattern = scaledDash + " " + scaledGap;
-    const cycleLen = scaledDash + scaledGap;
+    const cycleLen = scaledDash;
 
     return (
         <svg ref={rootRef}>
             <path
-                ref={forwardRef}
+                ref={pRef}
                 d=""
-                stroke={forwardColor}
+                stroke={color}
                 fill="none"
-                strokeWidth={fwdStroke}
+                strokeWidth={pStroke}
                 strokeLinecap="round"
-                strokeDasharray={dashPattern}
+                strokeDasharray={scaledDash}
                 style={{
-                    animationDuration: forwardDuration > 0 ? forwardDuration + "s" : "0s",
+                    animationDuration: animationDuration > 0 ? animationDuration + "s" : "0s",
                     animationDirection: "normal",
-                    ["--cycle-len" as string]: cycleLen + "px",
-                }}
-            />
-            <path
-                ref={reverseRef}
-                d=""
-                stroke={reverseColor}
-                fill="none"
-                strokeWidth={revStroke}
-                strokeLinecap="round"
-                strokeDasharray={dashPattern}
-                style={{
-                    animationDuration: reverseDuration > 0 ? reverseDuration + "s" : "0s",
-                    animationDirection: "reverse",
                     ["--cycle-len" as string]: cycleLen + "px",
                 }}
             />
             {labels && labels.length > 0 && (
                 <g ref={labelGroupRef}>
                     {labels.map((lbl, i) => {
-                        const isDirectional = lbl.textAnchor === "forward" || lbl.textAnchor === "reverse";
-                        const textAnchor = isDirectional ? undefined : (lbl.textAnchor ?? "middle") as StandardTextAnchor;
                         return (
                             <text
                                 key={i}
@@ -173,15 +129,12 @@ export default function BidirectionalPath({
                                 fontFamily={lbl.fontFamily}
                                 fontWeight={lbl.fontWeight}
                                 fontStyle={lbl.fontStyle}
-                                textAnchor={textAnchor}
+                                textAnchor={lbl.textAnchor ?? "middle"}
                                 opacity={lbl.opacity}
                                 letterSpacing={lbl.letterSpacing}
                                 textDecoration={lbl.textDecoration}
-                                dx={!isDirectional && lbl.dx ? lbl.dx / viewbox.zoom : undefined}
-                                dy={!isDirectional
-                                    ? (lbl.dy != null ? lbl.dy / viewbox.zoom : -(Math.max(fwdStroke, revStroke) + 4 / viewbox.zoom))
-                                    : undefined
-                                }
+                                dx={lbl.dx ? lbl.dx / viewbox.zoom : undefined}
+                                dy={lbl.dy ? lbl.dy / viewbox.zoom : undefined}
                             >
                                 {lbl.text}
                             </text>

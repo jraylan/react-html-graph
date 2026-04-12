@@ -1,8 +1,6 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import { ConnectionContext } from "../context/connection-context";
-import { PortConnection, ConnectionType, ConnectionProviderProps, DragState, PortRegistration, ConnectionApi } from "../types";
-import useGraphMode from "../hooks/graph-mode";
-import useViewbox from "../hooks/viewbox";
+import { PortConnection, ConnectionType, ConnectionProviderProps, DragState, PortRegistration, ConnectionApi, ConnectionContextProps } from "../types";
 import useGraphRoot from "../hooks/graph-root";
 
 
@@ -13,26 +11,47 @@ import useGraphRoot from "../hooks/graph-root";
  * @param props Propriedades do provider (ConnectionProviderProps)
  * @returns JSX.Element
  */
-export default function ConnectionProvider({ graphApi, children }: ConnectionProviderProps) {
+export default function ConnectionProvider({ graphApi, children, mode, viewboxRef }: ConnectionProviderProps) {
     const [connections, setConnections] = useState<PortConnection[]>([]);
+    const [portRegistryVersion, setPortRegistryVersion] = useState(0);
     const [dragState, setDragState] = useState<DragState>({ active: false });
     const dragStateRef = useRef<DragState>({ active: false });
     const connectionsRef = useRef<PortConnection[]>([]);
     const portRegistry = useRef<Map<string, PortRegistration>>(new Map());
-    const mode = useGraphMode();
-    const viewbox = useViewbox();
+    const tempLinkListeners = useRef<Set<() => void>>(new Set());
+    const tempLinkNotifyRafRef = useRef(0);
     const graphRoot = useGraphRoot();
-    const viewboxRef = useRef(viewbox);
     const connectionApiRef = useRef<ConnectionApi | null>(null);
-    viewboxRef.current = viewbox;
     connectionsRef.current = connections;
 
     const registerPort = useCallback((reg: PortRegistration) => {
-        portRegistry.current.set(`${reg.nodeId}:${reg.portName}`, reg);
+        portRegistry.current.set(`${reg.nodeId}:${reg.PortID}`, reg);
+        setPortRegistryVersion(prev => prev + 1);
     }, []);
 
-    const unregisterPort = useCallback((nodeId: string, portName: string) => {
-        portRegistry.current.delete(`${nodeId}:${portName}`);
+    const unregisterPort = useCallback((nodeId: string, PortID: string) => {
+        portRegistry.current.delete(`${nodeId}:${PortID}`);
+        setPortRegistryVersion(prev => prev + 1);
+    }, []);
+
+    const getPortRegistration = useCallback((nodeId: string, PortID: string) => {
+        return portRegistry.current.get(`${nodeId}:${PortID}`) ?? null;
+    }, []);
+
+    const notifyTempLinkListeners = useCallback(() => {
+        cancelAnimationFrame(tempLinkNotifyRafRef.current);
+        tempLinkNotifyRafRef.current = requestAnimationFrame(() => {
+            tempLinkListeners.current.forEach(listener => listener());
+        });
+    }, []);
+
+    const getTempLinkState = useCallback(() => {
+        return dragStateRef.current;
+    }, []);
+
+    const subscribeTempLink = useCallback((listener: () => void) => {
+        tempLinkListeners.current.add(listener);
+        return () => tempLinkListeners.current.delete(listener);
     }, []);
 
     const getGraphApi = useCallback(() => {
@@ -51,49 +70,68 @@ export default function ConnectionProvider({ graphApi, children }: ConnectionPro
                 c =>
                     !(
                         c.from.nodeId === connection.from.nodeId &&
-                        c.from.portName === connection.from.portName &&
+                        c.from.PortID === connection.from.PortID &&
                         c.to.nodeId === connection.to.nodeId &&
-                        c.to.portName === connection.to.portName
+                        c.to.PortID === connection.to.PortID
                     )
             )
         );
     }, [mode]);
 
     const startDrag = useCallback(
-        (sourceNodeId: string, sourcePortName: string, connectionType: ConnectionType) => {
+        (sourceNodeId: string, sourcePortID: string, connectionType: ConnectionType, cursorPosition?: { x: number; y: number }) => {
             if (mode === "readonly") return;
             const state: DragState = {
                 active: true,
                 sourceNodeId,
-                sourcePortName,
+                sourcePortID,
                 connectionType,
-                cursorPosition: { x: 0, y: 0 },
+                cursorPosition: cursorPosition ?? { x: 0, y: 0 },
             };
             dragStateRef.current = state;
             setDragState(state);
+            notifyTempLinkListeners();
         },
-        [mode]
+        [mode, notifyTempLinkListeners]
     );
 
+    const updateDragCursor = useCallback((cursorPosition: { x: number; y: number }) => {
+        const current = dragStateRef.current;
+        if (!current.active) return;
+        if (
+            current.cursorPosition.x === cursorPosition.x
+            && current.cursorPosition.y === cursorPosition.y
+        ) {
+            return;
+        }
+
+        dragStateRef.current = {
+            ...current,
+            cursorPosition,
+        };
+        notifyTempLinkListeners();
+    }, [notifyTempLinkListeners]);
+
     const endDrag = useCallback(
-        async (targetNodeId?: string, targetPortName?: string, cursorPosition?: { x: number; y: number }) => {
+        async (targetNodeId?: string, targetPortID?: string, cursorPosition?: { x: number; y: number }) => {
             const current = dragStateRef.current;
             if (!current.active) return;
 
             // Evita reentradas causadas por mouseup global
             dragStateRef.current = { active: false };
+            notifyTempLinkListeners();
 
-            const sourceKey = `${current.sourceNodeId}:${current.sourcePortName}`;
+            const sourceKey = `${current.sourceNodeId}:${current.sourcePortID}`;
             const sourcePort = portRegistry.current.get(sourceKey);
 
             if (sourcePort?.onDragEnd) {
                 try {
                     await sourcePort.onDragEnd(graphApi, {
                         sourceNodeId: current.sourceNodeId,
-                        sourcePortName: current.sourcePortName,
+                        sourcePortID: current.sourcePortID,
                         connectionType: current.connectionType,
                         targetNodeId,
-                        targetPortName,
+                        targetPortID,
                         cursorPosition: cursorPosition ?? { x: 0, y: 0 },
                     });
                 } catch (_e) {
@@ -104,8 +142,53 @@ export default function ConnectionProvider({ graphApi, children }: ConnectionPro
             // Oculta o link temporário após o callback finalizar
             setDragState({ active: false });
         },
-        [graphApi]
+        [graphApi, notifyTempLinkListeners]
     );
+
+    const dragOverPort = useCallback((targetNodeId: string, targetPortID: string): void => {
+        const current = dragStateRef.current;
+        if (!current.active) return;
+        if (current.targetNodeId === targetNodeId && current.targetPortID === targetPortID) return;
+
+        dragStateRef.current = {
+            ...current,
+            targetNodeId,
+            targetPortID,
+        };
+        notifyTempLinkListeners();
+    }, [notifyTempLinkListeners]);
+
+    const dragLeavePort = useCallback((): void => {
+        const current = dragStateRef.current;
+        if (!current.active) return;
+        if (!current.targetNodeId && !current.targetPortID) return;
+
+        dragStateRef.current = {
+            ...current,
+            targetNodeId: undefined,
+            targetPortID: undefined,
+        };
+        notifyTempLinkListeners();
+    }, [notifyTempLinkListeners]);
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!dragStateRef.current.active) return;
+
+            const vb = viewboxRef.current;
+            const graph = graphRoot.current;
+            if (!graph) return;
+
+            const rect = graph.getBoundingClientRect();
+            updateDragCursor({
+                x: (e.clientX - rect.left) / vb.zoom + vb.x,
+                y: (e.clientY - rect.top) / vb.zoom + vb.y,
+            });
+        };
+
+        document.addEventListener("mousemove", handleMouseMove);
+        return () => document.removeEventListener("mousemove", handleMouseMove);
+    }, [graphRoot, updateDragCursor, viewboxRef]);
 
     // mouseup global: encerra o arraste quando clicado em espaço vazio
     useEffect(() => {
@@ -127,9 +210,13 @@ export default function ConnectionProvider({ graphApi, children }: ConnectionPro
         };
         document.addEventListener("mouseup", handleMouseUp);
         return () => document.removeEventListener("mouseup", handleMouseUp);
-    }, [endDrag, graphRoot]);
+    }, [endDrag, graphRoot, viewboxRef]);
 
-    const value = useMemo(() => {
+    useEffect(() => {
+        return () => cancelAnimationFrame(tempLinkNotifyRafRef.current);
+    }, []);
+
+    const value = useMemo((): ConnectionContextProps => {
         connectionApiRef.current = {
             connect,
             disconnect,
@@ -137,21 +224,31 @@ export default function ConnectionProvider({ graphApi, children }: ConnectionPro
         }
         return {
             connections,
+            portRegistryVersion,
             dragState,
             getGraphApi,
             connect,
             disconnect,
             startDrag,
+            dragOverPort,
+            dragLeavePort,
             endDrag,
             registerPort,
+            getPortRegistration,
+            getTempLinkState,
+            subscribeTempLink,
             unregisterPort,
         }
     }, [
-        connections, dragState,
+        connections, dragState, portRegistryVersion,
         getGraphApi, connect,
         disconnect, startDrag,
         endDrag, registerPort,
-        unregisterPort
+        getPortRegistration,
+        getTempLinkState,
+        subscribeTempLink,
+        unregisterPort, dragOverPort,
+        dragLeavePort,
     ]);
 
 

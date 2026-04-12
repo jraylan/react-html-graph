@@ -22,6 +22,8 @@ export interface ConnectionApi {
 export interface ConnectionContextProps {
     /** Lista de conexões no grafo. */
     connections: PortConnection[];
+    /** Versão monotônica do registro de portas para sincronização de geometria. */
+    portRegistryVersion: number;
     /** Estado do arraste entre portas. */
     dragState: DragState;
     /** Retorna a instância atual da API imperativa do grafo. */
@@ -31,19 +33,33 @@ export interface ConnectionContextProps {
     /** Remove uma conexão. */
     disconnect(connection: PortConnection): void;
     /** Inicia o arraste a partir de uma porta (source). */
-    startDrag(sourceNodeId: string, sourcePortName: string, connectionType: ConnectionType): void;
+    startDrag(sourceNodeId: string, sourcePortID: string, connectionType: ConnectionType, cursorPosition?: { x: number; y: number }): void;
+    /** Atualiza a porta alvo ao arrastar link sobre uma porta. */
+    dragOverPort(targetNodeId: string, targetPortID: string, targetConnectionType: ConnectionType): void;
+    /** Evento disparado quando o cursor sai de uma porta durante o arraste. */
+    dragLeavePort(): void;
     /** Finaliza o arraste (pode incluir target ou apenas cancelar). */
-    endDrag(targetNodeId?: string, targetPortName?: string, cursorPosition?: { x: number; y: number }): void;
+    endDrag(targetNodeId?: string, targetPortID?: string, cursorPosition?: { x: number; y: number }): void;
     /** Registra uma porta disponível para conexão. */
     registerPort(registration: PortRegistration): void;
+    /** Retorna os metadados declarativos de uma porta registrada. */
+    getPortRegistration(nodeId: string, PortID: string): PortRegistration | null;
+    /** Retorna o snapshot atual do link temporário durante o drag. */
+    getTempLinkState(): DragState;
+    /** Assina mudanças do estado do link temporário. */
+    subscribeTempLink(listener: () => void): () => void;
     /** Remove o registro de uma porta. */
-    unregisterPort(nodeId: string, portName: string): void;
+    unregisterPort(nodeId: string, PortID: string): void;
 }
 
 /** Propriedades do provider que expõe a API do grafo. */
 export interface ConnectionProviderProps {
     /** Instância da API do grafo. */
     graphApi: GraphApi;
+    /** Ref estável para o viewbox mais recente do grafo. */
+    viewboxRef: React.RefObject<Viewbox>;
+    /** Modo atual do grafo. */
+    mode: GraphMode;
     /** Elementos filhos renderizados pelo provider. */
     children: React.ReactNode;
 }
@@ -59,11 +75,14 @@ export type DragState =
         /** Id do nó de origem do arraste. */
         sourceNodeId: string;
         /** Nome da porta de origem do arraste. */
-        sourcePortName: string;
+        sourcePortID: string;
         /** Tipo de conexão sendo arrastada. */
         connectionType: ConnectionType;
         /** Posição do cursor no momento (coordenadas do mundo). */
         cursorPosition: { x: number; y: number };
+        targetNodeId?: string;
+        targetPortID?: string;
+        targetConnectionType?: ConnectionType;
     };
 
 /** Interface do contexto de erros. */
@@ -101,6 +120,8 @@ export interface GraphApi {
     registerLinkTemplate(connectionType: string, template: (props: LinkInfoContextValue) => React.ReactNode): void;
     /** Define o template padrão para links sem template registrado. */
     setDefaultLinkTemplate(template: (props: LinkInfoContextValue) => React.ReactNode): void;
+    /** Define o template padrão do link temporário durante um drag entre portas. */
+    setDefaultTempLinkTemplate(template: (props: TempLinkInfoContextValue) => React.ReactNode): void;
 }
 
 /** Estado do viewbox — posição e escala do canvas. */
@@ -256,6 +277,24 @@ export interface GraphLayoutResult {
     bounds: { left: number; top: number; width: number; height: number };
 }
 
+/** Vetor 2D simples. */
+export interface Vector2 {
+    x: number;
+    y: number;
+}
+
+/** Âncora geométrica de uma extremidade de link no espaço do grafo. */
+export interface GraphLinkAnchor {
+    /** Coordenada X da âncora. */
+    x: number;
+    /** Coordenada Y da âncora. */
+    y: number;
+    /** Coordenada Z associada ao nó/âncora. */
+    z: number;
+    /** Vetor normalizado da porta em relação ao centro do nó. */
+    d: Vector2;
+}
+
 /** Estado de uma extremidade de link reportado em runtime. */
 export interface GraphLinkEndpointState {
     /** Id do nó que contém a porta. */
@@ -284,6 +323,62 @@ export interface GraphLinkRuntimeState {
     invalid: boolean;
 }
 
+/** Localização declarativa de uma porta em relação ao centro do nó. */
+export type GraphPortLocation = Vector2 | "top" | "bottom" | "left" | "right";
+
+/** Propriedades do componente de link (usado para renderizar conexões). */
+export interface GraphLinkProps<T = any> {
+    /** Identificador único do link. */
+    id: string;
+    /** Endpoint de origem usado para resolver o template. */
+    from: { node: string; port: string };
+    /** Endpoint de destino usado para resolver o template. */
+    to: { node: string; port: string };
+    /** Dados arbitrários associados ao link. */
+    data: T;
+    /** Callback para reportar o estado runtime do link. */
+    onStateChange?: (state: GraphLinkRuntimeState) => void;
+    /** Função de renderização do conteúdo visual do link. */
+    template: (props: LinkInfoContextValue<T>) => React.ReactNode;
+};
+
+
+export interface TempLinkInfoContextValue<T = any> {
+    /** Identificadores lógicos da extremidade de origem. */
+    from: { node: string; port: string };
+    /** Identificadores lógicos da extremidade de destino enquanto o usuário arrasta. */
+    to?: { node: string; port: string };
+    /** Âncora geométrica atual da origem. */
+    fromAnchor: GraphLinkAnchor | null;
+    /** Âncora geométrica atual do destino ou cursor. */
+    toAnchor: GraphLinkAnchor | null;
+    /** Elemento DOM do nó de origem (node-graph-object). */
+    fromNode: HTMLElement | null;
+    /** Elemento DOM da porta de origem (node-graph-port). */
+    fromPort: HTMLElement | null;
+    /** Elemento DOM do nó de destino. */
+    toNode: HTMLElement | null;
+    /** Elemento DOM da porta de destino. */
+    toPort: HTMLElement | null;
+    /** Estado runtime do nó de origem (posição, dimensões, data). */
+    fromNodeState: GraphNodeRuntimeState | null;
+    /** Estado runtime do nó de destino. */
+    toNodeState: GraphNodeRuntimeState | null;
+    /** Callback para reportar o estado runtime do link. */
+    data: T
+}
+
+/**
+ * Propriedades do componente de link temporário
+ * (usado para renderizar conexões enquanto o usuário arrasta).
+ */
+export interface TempLinkProps<T = any> {
+    /** Dados arbitrários associados ao link. */
+    data?: T;
+    /** Função de renderização do conteúdo visual do link. */
+    template?: (props: TempLinkInfoContextValue<T>) => React.ReactNode;
+}
+
 /** Snapshot serializável do grafo contendo nós e links. */
 export interface GraphSerializedState<NodeData = any, LinkData = any> {
     /** Lista de nós persistidos. */
@@ -310,6 +405,10 @@ export interface GraphNodeRuntimeState<T = any> {
 export interface GraphObjectProps<T extends object = any> {
     /** Identificador único do nó. */
     id: string;
+    /** Modo atual do grafo. */
+    mode: GraphMode;
+    /** Getter estável para o zoom atual do viewbox. */
+    getZoom: () => number;
     /** Posição controlada pelo Graph quando disponível. */
     position?: Point3D;
     /** Definições de portas do nó (opcional). */
@@ -354,14 +453,16 @@ export interface GraphPortMouseOverEvent {
 export interface GraphPortProps {
     /** Tipo da conexão suportada pela porta. */
     connectionType: ConnectionType;
+    /** Modo atual do grafo. */
+    mode: GraphMode;
     /** Identificador da porta. */
     id: string;
     /** Identificador do nó que contém a porta. */
     nodeId: string;
     /** Direção da porta. */
     direction: "input" | "output" | "bidirectional";
-    /** Localização ou coordenadas da porta no nó. */
-    location: { x: number; y: number } | "top" | "bottom" | "left" | "right";
+    /** Vetor normalizado da porta relativo ao centro do nó, ou um alias lateral. */
+    location: GraphPortLocation;
     /** Callback opcional chamado ao terminar um arraste. */
     onDragEnd?: (api: GraphApi, event: PortDragEndEvent) => Promise<void>;
     /** Render function para a UI da porta. */
@@ -400,6 +501,10 @@ export interface LinkInfoContextValue<T = any> {
     from: { node: string; port: string };
     /** Identificadores lógicos da extremidade de destino. */
     to: { node: string; port: string };
+    /** Âncora geométrica atual da origem. */
+    fromAnchor: GraphLinkAnchor | null;
+    /** Âncora geométrica atual do destino. */
+    toAnchor: GraphLinkAnchor | null;
     /** Elemento DOM do nó de origem (node-graph-object). */
     fromNode: HTMLElement | null;
     /** Elemento DOM da porta de origem (node-graph-port). */
@@ -465,12 +570,24 @@ export interface GraphEventBusContextValue {
     ) => void;
 }
 
+interface LinkLabelBase {
+    text: string;
+    position?: number;
+    color?: string;
+    fontFamily?: string;
+    fontSize?: number;
+    fontWeight?: string | number;
+    fontStyle?: string;
+    opacity?: number;
+    letterSpacing?: number;
+    textDecoration?: string;
+}
 /**
- * Tipos possíveis de label para links.
+ * Tipos possíveis de label para links bidirecionais.
  * Existem duas formas: labels direcionais (forward/reverse) com 'offset'
  * ou labels posicionais (start/middle/end) com dx/dy para deslocamento.
  */
-export type LinkLabel =
+export type BidirectionalLinkLabel =
     | (LinkLabelBase & {
         textAnchor: "forward" | "reverse";
         offset?: number;
@@ -484,18 +601,11 @@ export type LinkLabel =
         dx?: number;
     });
 
-/** Estrutura base comum a todos os LinkLabel. */
-interface LinkLabelBase {
-    text: string;
-    position?: number;
-    color?: string;
-    fontFamily?: string;
-    fontSize?: number;
-    fontWeight?: string | number;
-    fontStyle?: string;
-    opacity?: number;
-    letterSpacing?: number;
-    textDecoration?: string;
+export interface LinkLabel extends LinkLabelBase {
+    textAnchor?: "start" | "middle" | "end";
+    offset?: never;
+    dy?: number;
+    dx?: number;
 }
 
 /** Definição de um nó para uso via API imperativa. */
@@ -530,8 +640,8 @@ export interface Point3D {
 /** Conexão entre duas portas (modelo lógico). */
 export interface PortConnection<T = any> {
     connectionType: ConnectionType;
-    from: { nodeId: string; portName: string };
-    to: { nodeId: string; portName: string };
+    from: { nodeId: string; PortID: string };
+    to: { nodeId: string; PortID: string };
     data?: T;
 }
 
@@ -540,7 +650,8 @@ export interface PortDefinition {
     id: string;
     connectionType: ConnectionType;
     direction: "input" | "output" | "bidirectional";
-    location: { x: number; y: number } | "top" | "bottom" | "left" | "right";
+    /** Vetor normalizado da porta relativo ao centro do nó, ou um alias lateral. */
+    location: GraphPortLocation;
     onDragEnd?: (api: GraphApi, event: PortDragEndEvent) => Promise<void>;
     children: (props: PortRenderProps) => React.ReactNode;
 }
@@ -548,19 +659,20 @@ export interface PortDefinition {
 /** Evento disparado quando um arraste termina. Fornece contexto de source/target. */
 export interface PortDragEndEvent {
     sourceNodeId: string;
-    sourcePortName: string;
+    sourcePortID: string;
     connectionType: ConnectionType;
     targetNodeId?: string;
-    targetPortName?: string;
+    targetPortID?: string;
     cursorPosition: { x: number; y: number };
 }
 
 /** Registro de uma porta no provedor de conexões. */
 export interface PortRegistration {
     nodeId: string;
-    portName: string;
+    PortID: string;
     connectionType: ConnectionType;
     direction: "input" | "output" | "bidirectional";
+    location: GraphPortLocation;
     onDragEnd?: (api: GraphApi, event: PortDragEndEvent) => Promise<void>;
 }
 
@@ -570,7 +682,8 @@ export interface PortRenderProps {
     id: string;
     nodeId: string;
     direction: "input" | "output" | "bidirectional";
-    location: { x: number; y: number } | "top" | "bottom" | "left" | "right";
+    /** Vetor normalizado da porta relativo ao centro do nó, ou um alias lateral. */
+    location: GraphPortLocation;
     isDragging: boolean;
     canDrop: boolean;
     canDrag: boolean;
@@ -591,6 +704,7 @@ export interface GraphContextProps {
     viewbox: Viewbox;
     nodes: React.ReactNode[];
     links: React.ReactNode[];
+    tempLinkTemplate?: (props: TempLinkInfoContextValue) => React.ReactNode;
     mode: GraphMode;
 }
 

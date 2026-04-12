@@ -3,8 +3,7 @@ import { GraphMode, NodeEventEmitter, Point3D } from "../types";
 
 type MoveState = {
     moving: boolean;
-    movePointStart: { x: number; y: number };
-    startPos: { x: number; y: number };
+    lastPointer: { x: number; y: number };
     currentPos: { x: number; y: number };
 };
 
@@ -52,8 +51,7 @@ export function useMoveBehaviour({
 }: UseMoveBehaviourOptions): UseMoveBehaviourReturn {
     const moveRef = useRef<MoveState>({
         moving: false,
-        movePointStart: { x: 0, y: 0 },
-        startPos: { x: 0, y: 0 },
+        lastPointer: { x: 0, y: 0 },
         currentPos: { x: 0, y: 0 },
     });
 
@@ -61,9 +59,8 @@ export function useMoveBehaviour({
         if (e.button !== 0 || mode === "readonly") return;
         e.preventDefault();
         moveRef.current.moving = true;
-        moveRef.current.movePointStart.x = e.clientX;
-        moveRef.current.movePointStart.y = e.clientY;
-        moveRef.current.startPos = { x: position.x, y: position.y };
+        moveRef.current.lastPointer.x = e.clientX;
+        moveRef.current.lastPointer.y = e.clientY;
         moveRef.current.currentPos = { x: position.x, y: position.y };
     }, [position.x, position.y, mode]);
 
@@ -83,15 +80,17 @@ export function useMoveBehaviour({
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!elementRef.current || !moveRef.current.moving) return;
         const zoom = getZoom();
-        const dx = (e.clientX - moveRef.current.movePointStart.x) / zoom;
-        const dy = (e.clientY - moveRef.current.movePointStart.y) / zoom;
-        const newX = moveRef.current.startPos.x + dx;
-        const newY = moveRef.current.startPos.y + dy;
+        const dx = (e.clientX - moveRef.current.lastPointer.x) / zoom;
+        const dy = (e.clientY - moveRef.current.lastPointer.y) / zoom;
+        const newX = moveRef.current.currentPos.x + dx;
+        const newY = moveRef.current.currentPos.y + dy;
         const nextPosition: Point3D = {
             x: newX,
             y: newY,
             z: position.z,
         };
+        moveRef.current.lastPointer.x = e.clientX;
+        moveRef.current.lastPointer.y = e.clientY;
         moveRef.current.currentPos.x = newX;
         moveRef.current.currentPos.y = newY;
         elementRef.current.style.left = `${newX.toFixed(0)}px`;

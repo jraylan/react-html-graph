@@ -1,7 +1,12 @@
-import { useContext, useState, useEffect } from "react";
+import { useCallback, useContext, useEffect, useRef, useSyncExternalStore } from "react";
+import { calculatePath } from "../calculations";
 import { ConnectionContext } from "../context/connection-context";
-import useGetViewbox from "../hooks/get-viewbox";
-import useGraphRoot from "../hooks/graph-root";
+import useLinkAnchors from "../hooks/link-anchors";
+import useNodeRegistry from "../hooks/node-registry";
+import useViewbox from "../hooks/viewbox";
+import { TempLinkInfoContextValue, TempLinkProps } from "../types";
+import { buildCursorAnchor, buildLinkAnchor } from "../utils/link-geometry";
+
 
 /**
  * Componente que renderiza um link temporário enquanto o usuário arrasta uma
@@ -10,87 +15,149 @@ import useGraphRoot from "../hooks/graph-root";
  *
  * @returns JSX.Element | null
  */
-export default function TempLink() {
-    const { dragState } = useContext(ConnectionContext);
-    const getViewbox = useGetViewbox();
-    const graphRoot = useGraphRoot();
-    const [cursor, setCursor] = useState({ x: 0, y: 0 });
-    const [sourcePos, setSourcePos] = useState<{ x: number; y: number } | null>(null);
+export default function TempLink(props: TempLinkProps) {
+    return (
+        <node-graph-temp-link>
+            {props.template
+                ? <TempLinkTemplateContent template={props.template} data={props.data} />
+                : <DefaultTempLinkPath />}
+        </node-graph-temp-link>
+    );
+}
 
-    useEffect(() => {
-        if (!dragState.active) return;
+function TempLinkTemplateContent(props: Required<Pick<TempLinkProps, "template">> & Pick<TempLinkProps, "data">) {
+    const { getTempLinkState, subscribeTempLink } = useContext(ConnectionContext);
+    const registry = useNodeRegistry();
+    const dragState = useSyncExternalStore(subscribeTempLink, getTempLinkState, getTempLinkState);
 
-        const handleMouseMove = (e: MouseEvent) => {
-            const graph = graphRoot.current;
-            if (!graph) return;
-            const rect = graph.getBoundingClientRect();
-            const viewbox = getViewbox();
-            setCursor({
-                x: (e.clientX - rect.left) / viewbox.zoom + viewbox.x,
-                y: (e.clientY - rect.top) / viewbox.zoom + viewbox.y,
-            });
-        };
+    const source = dragState.active
+        ? { node: dragState.sourceNodeId, port: dragState.sourcePortID }
+        : { node: "", port: "" };
+    const target = dragState.active && dragState.targetNodeId && dragState.targetPortID
+        ? { node: dragState.targetNodeId, port: dragState.targetPortID }
+        : undefined;
+    const { fromAnchor, toAnchor, fromNodeState, toNodeState, } = useLinkAnchors({
+        from: source,
+        to: target,
+        cursorPosition: dragState.active ? dragState.cursorPosition : undefined,
+        reportOrphans: false,
+    });
 
-        document.addEventListener('mousemove', handleMouseMove);
-        return () => document.removeEventListener('mousemove', handleMouseMove);
-    }, [dragState.active, getViewbox, graphRoot]);
+    if (!dragState.active) return null;
 
-    useEffect(() => {
+    const info: TempLinkInfoContextValue = {
+        from: source,
+        to: target,
+        fromAnchor,
+        toAnchor,
+        fromNode: registry.getNodeElement(dragState.sourceNodeId),
+        fromPort: registry.getPortElement(dragState.sourceNodeId, dragState.sourcePortID),
+        toNode: target ? registry.getNodeElement(target.node) : null,
+        toPort: target ? registry.getPortElement(target.node, target.port) : null,
+        fromNodeState,
+        toNodeState,
+        data: props.data,
+    };
+
+    return <>{props.template(info)}</>;
+}
+
+function DefaultTempLinkPath() {
+    const { getTempLinkState, subscribeTempLink, getPortRegistration } = useContext(ConnectionContext);
+    const registry = useNodeRegistry();
+    const viewbox = useViewbox();
+    const rootRef = useRef<SVGSVGElement>(null);
+    const pathRef = useRef<SVGPathElement>(null);
+    const calcVersionRef = useRef(0);
+
+    const clearPath = useCallback(() => {
+        const root = rootRef.current;
+        const path = pathRef.current;
+        if (!root || !path) return;
+
+        calcVersionRef.current += 1;
+        path.setAttribute("d", "");
+        root.style.left = "0px";
+        root.style.top = "0px";
+        root.style.width = "0px";
+        root.style.height = "0px";
+        root.removeAttribute("viewBox");
+    }, []);
+
+    const redraw = useCallback(() => {
+        const root = rootRef.current;
+        const path = pathRef.current;
+        if (!root || !path) return;
+
+        const dragState = getTempLinkState();
         if (!dragState.active) {
-            setSourcePos(null);
+            clearPath();
             return;
         }
 
-        const graph = graphRoot.current;
-        if (!graph) return;
+        const fromNodeState = registry.getNodeState(dragState.sourceNodeId);
+        const fromPortRegistration = getPortRegistration(dragState.sourceNodeId, dragState.sourcePortID);
+        const fromAnchor = buildLinkAnchor(fromNodeState, fromPortRegistration?.location);
+        const toAnchor = dragState.targetNodeId && dragState.targetPortID
+            ? buildLinkAnchor(
+                registry.getNodeState(dragState.targetNodeId),
+                getPortRegistration(dragState.targetNodeId, dragState.targetPortID)?.location,
+            )
+            : buildCursorAnchor(dragState.cursorPosition);
 
-        const el = graph.querySelector(
-            `node-graph-object[node-id="${dragState.sourceNodeId}"] node-graph-port[port-id="${dragState.sourcePortName}"]`
-        );
-        if (!el) return;
+        if (!fromAnchor || !toAnchor) {
+            clearPath();
+            return;
+        }
 
+        const version = ++calcVersionRef.current;
+        calculatePath({
+            fromX: fromAnchor.x,
+            fromY: fromAnchor.y,
+            toX: toAnchor.x,
+            toY: toAnchor.y,
+            fromVector: fromAnchor.d,
+            toVector: toAnchor.d,
+            steps: 60,
+        }).then(result => {
+            if (version !== calcVersionRef.current) return;
 
-        const graphRect = graph.getBoundingClientRect();
-        const portRect = el.getBoundingClientRect();
-        const viewbox = getViewbox();
+            root.style.left = result.bounds.left + "px";
+            root.style.top = result.bounds.top + "px";
+            root.style.width = result.bounds.width + "px";
+            root.style.height = result.bounds.height + "px";
+            root.setAttribute("viewBox", `${result.bounds.left} ${result.bounds.top} ${result.bounds.width} ${result.bounds.height}`);
+            path.setAttribute("d", result.pathD);
+        });
+    }, [clearPath, getPortRegistration, getTempLinkState, registry]);
 
-        const source = {
-            x: (portRect.left + portRect.width / 2 - graphRect.left) / viewbox.zoom + viewbox.x,
-            y: (portRect.top + portRect.height / 2 - graphRect.top) / viewbox.zoom + viewbox.y,
-        };
+    useEffect(() => {
+        redraw();
+        return subscribeTempLink(redraw);
+    }, [redraw, subscribeTempLink]);
 
-        setSourcePos(source);
-        setCursor(source);
-    }, [dragState, getViewbox, graphRoot]);
+    useEffect(() => {
+        redraw();
+    }, [redraw, viewbox.zoom]);
 
-    if (!dragState.active || !sourcePos) return null;
-
-    const dx = cursor.x - sourcePos.x;
-    const cp = Math.abs(dx) * 0.5 || 50;
-    const startControlX = sourcePos.x + cp;
-    const endControlX = cursor.x - cp;
-    const d = `M ${sourcePos.x} ${sourcePos.y} C ${sourcePos.x + cp} ${sourcePos.y}, ${cursor.x - cp} ${cursor.y}, ${cursor.x} ${cursor.y}`;
-    const minX = Math.min(sourcePos.x, cursor.x, startControlX, endControlX) - 8;
-    const minY = Math.min(sourcePos.y, cursor.y) - 8;
-    const maxX = Math.max(sourcePos.x, cursor.x, startControlX, endControlX) + 8;
-    const maxY = Math.max(sourcePos.y, cursor.y) + 8;
-    const width = Math.max(1, maxX - minX);
-    const height = Math.max(1, maxY - minY);
 
     return (
-        <node-graph-temp-link>
-            <svg
+        <svg ref={rootRef}>
+            <path
+                ref={pathRef}
+                d=""
+                stroke="#888"
+                fill="none"
+                strokeWidth={3 / viewbox.zoom}
+                strokeLinecap="round"
+                strokeDasharray={12 / viewbox.zoom}
                 style={{
-                    left: `${minX}px`,
-                    top: `${minY}px`,
-                    width: `${width}px`,
-                    height: `${height}px`,
+                    animationDuration: "1s",
+                    animationDirection: "normal",
+                    ["--cycle-len" as string]: 12 / viewbox.zoom + "px",
                 }}
-                viewBox={`${minX} ${minY} ${width} ${height}`}
-            >
-                <path d={d} fill="none" stroke="#888" strokeWidth={2} strokeDasharray="6 3" vectorEffect="non-scaling-stroke" />
-            </svg>
-        </node-graph-temp-link>
+            />
+        </svg>
     );
 }
 

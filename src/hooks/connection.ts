@@ -1,7 +1,6 @@
 import { useContext, useCallback } from "react";
 import { ConnectionContext } from "../context/connection-context";
-import { GraphContext } from "../context/graph-context";
-import { ConnectionType } from "../types";
+import { ConnectionType, GraphMode } from "../types";
 import useGraphRoot from "./graph-root";
 import useGetViewbox from "./get-viewbox";
 
@@ -22,28 +21,40 @@ export function useConnections() {
  * de edição).
  *
  * @param nodeId Id do nó que contém a porta
- * @param portName Nome da porta
+ * @param PortID Nome da porta
  * @param connectionType Tipo de conexão suportada
  * @returns dragHandlers, isDragging, canDrag
  */
-export function usePortDrag(nodeId: string, portName: string, connectionType: ConnectionType) {
+export function usePortDrag(nodeId: string, PortID: string, connectionType: ConnectionType, mode: GraphMode) {
     const { startDrag, dragState } = useContext(ConnectionContext);
-    const { mode } = useContext(GraphContext);
+    const graphRoot = useGraphRoot();
+    const getViewbox = useGetViewbox();
 
     const handleMouseDown = useCallback(
         (e: React.MouseEvent) => {
             if (mode === "readonly") return;
             e.stopPropagation();
             e.preventDefault();
-            startDrag(nodeId, portName, connectionType);
+            const graph = graphRoot.current;
+            let cursorPosition = { x: 0, y: 0 };
+            if (graph) {
+                const rect = graph.getBoundingClientRect();
+                const viewbox = getViewbox();
+                cursorPosition = {
+                    x: (e.clientX - rect.left) / viewbox.zoom + viewbox.x,
+                    y: (e.clientY - rect.top) / viewbox.zoom + viewbox.y,
+                };
+            }
+
+            startDrag(nodeId, PortID, connectionType, cursorPosition);
         },
-        [mode, nodeId, portName, connectionType, startDrag]
+        [mode, nodeId, PortID, connectionType, startDrag, getViewbox, graphRoot]
     );
 
     const isDragging =
         dragState.active &&
         dragState.sourceNodeId === nodeId &&
-        dragState.sourcePortName === portName;
+        dragState.sourcePortID === PortID;
 
     return {
         dragHandlers: { onMouseDown: handleMouseDown },
@@ -58,13 +69,12 @@ export function usePortDrag(nodeId: string, portName: string, connectionType: Co
  * modo de edição).
  *
  * @param nodeId Id do nó que contém a porta
- * @param portName Nome da porta
+ * @param PortID Id da porta
  * @param connectionType Tipo de conexão suportada
  * @returns dropHandlers, canDrop
  */
-export function usePortDrop(nodeId: string, portName: string, connectionType: ConnectionType) {
+export function usePortDrop(nodeId: string, PortID: string, connectionType: ConnectionType, mode: GraphMode) {
     const { dragState, endDrag } = useContext(ConnectionContext);
-    const { mode } = useContext(GraphContext);
     const graphRoot = useGraphRoot();
     const getViewbox = useGetViewbox();
 
@@ -89,9 +99,9 @@ export function usePortDrop(nodeId: string, portName: string, connectionType: Co
                 };
             }
 
-            endDrag(nodeId, portName, cursorPos);
+            endDrag(nodeId, PortID, cursorPos);
         },
-        [mode, dragState.active, nodeId, portName, endDrag, getViewbox, graphRoot]
+        [mode, dragState.active, nodeId, PortID, endDrag, getViewbox, graphRoot]
     );
 
     return {

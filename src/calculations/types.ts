@@ -1,3 +1,5 @@
+import { Vector2 } from "../types";
+
 export type PortDirection = "left" | "right" | "top" | "bottom";
 
 export type PathInput = {
@@ -5,13 +7,23 @@ export type PathInput = {
     fromY: number;
     toX: number;
     toY: number;
-    fromDir: PortDirection;
-    toDir: PortDirection;
-    gap: number;
+    fromVector?: Vector2;
+    toVector?: Vector2;
+    fromDir?: PortDirection;
+    toDir?: PortDirection;
     steps: number;
 };
 
 export type PathOutput = {
+    pathD: string;
+    bounds: { left: number; top: number; width: number; height: number };
+};
+
+export type BidirectionalPathInput = PathInput & {
+    gap: number;
+};
+
+export type BidirectionalPathOutput = {
     centerD: string;
     forwardD: string;
     reverseD: string;
@@ -88,8 +100,12 @@ export type FitViewOutput = {
 
 export type LabelInput = {
     position: number;
-    side: string;
     offset: number;
+};
+
+
+export type BidirectionalLabelInput = LabelInput & {
+    side: string;
 };
 
 export type LabelsInput = {
@@ -97,10 +113,24 @@ export type LabelsInput = {
     fromY: number;
     toX: number;
     toY: number;
-    fromDir: PortDirection;
-    toDir: PortDirection;
-    halfGap: number;
+    fromVector?: Vector2;
+    toVector?: Vector2;
+    fromDir?: PortDirection;
+    toDir?: PortDirection;
     labels: LabelInput[];
+};
+
+export type BidirectionalLabelsInput = {
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    fromVector?: Vector2;
+    toVector?: Vector2;
+    fromDir?: PortDirection;
+    toDir?: PortDirection;
+    halfGap: number;
+    labels: BidirectionalLabelInput[];
 };
 
 export type LabelOutput = {
@@ -108,3 +138,17 @@ export type LabelOutput = {
     y: number;
     textAnchor: string;
 };
+
+type EventPayload<T extends string, D> = {
+    type: T;
+    id: string;
+} & D;
+
+export type MessageEventData =
+    | EventPayload<"calculatePath", PathInput>
+    | EventPayload<"calculateBidirectionalPath", BidirectionalPathInput>
+    | EventPayload<"calculateLabels", LabelsInput>
+    | EventPayload<"calculateBidirectionalLabels", BidirectionalLabelsInput>
+    | EventPayload<"calculateLayout", LayoutInput>
+    | EventPayload<"calculateFitView", FitViewInput>
+    ;

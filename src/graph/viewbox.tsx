@@ -16,7 +16,7 @@ export default function ViewBox() {
     const ref = useRef<HTMLDivElement>(null)
     const viewbox = useViewbox();
     const mode = useGraphMode();
-    const { nodes, links } = useGraphItems();
+    const { nodes, links, tempLinkTemplate } = useGraphItems();
 
     useEffect(() => {
         if (!ref.current) return;
@@ -31,7 +31,7 @@ export default function ViewBox() {
         <graph-viewbox ref={ref}>
             {links}
             {nodes}
-            {mode === 'edit' && <TempLink />}
+            {mode === 'edit' && <TempLink template={tempLinkTemplate} />}
         </graph-viewbox>
     )
 

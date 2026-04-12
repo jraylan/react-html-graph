@@ -1,0 +1,486 @@
+{
+  "nodes": [
+    {
+      "id": "pe01",
+      "nodeType": "router",
+      "position": {
+        "x": 428.26239390762385,
+        "y": 777.2814898559909,
+        "z": 0
+      },
+      "data": {
+        "id": "pe01",
+        "label": "01 PE01-BSB-CORE",
+        "type": "router",
+        "model": "Huawei_router",
+        "ip": "10.99.99.1",
+        "status": "online",
+        "uptime": "287d 4h",
+        "x": 480,
+        "y": 300
+      }
+    },
+    {
+      "id": "pe02",
+      "nodeType": "router",
+      "position": {
+        "x": 1012.864267789337,
+        "y": 397.7213822752792,
+        "z": 0
+      },
+      "data": {
+        "id": "pe02",
+        "label": "02 PE02-BSB-CORE",
+        "type": "router",
+        "model": "Huawei_router",
+        "ip": "10.99.99.2",
+        "status": "online",
+        "uptime": "102d 7h",
+        "x": 700,
+        "y": 460
+      }
+    },
+    {
+      "id": "pe03",
+      "nodeType": "switch",
+      "position": {
+        "x": 410.0471696474731,
+        "y": 1831.8745789496224,
+        "z": 0
+      },
+      "data": {
+        "id": "pe03",
+        "label": "03 PE03-BSB-CORE",
+        "type": "switch",
+        "model": "Huawei_switch",
+        "ip": "10.99.99.3",
+        "status": "online",
+        "uptime": "55d 3h",
+        "x": 700,
+        "y": 140
+      }
+    },
+    {
+      "id": "pe04",
+      "nodeType": "switch",
+      "position": {
+        "x": 906.824315723433,
+        "y": 1710.7322980897143,
+        "z": 0
+      },
+      "data": {
+        "id": "pe04",
+        "label": "04 PE04-BSB-CORE",
+        "type": "switch",
+        "model": "Huawei_switch",
+        "ip": "10.99.99.4",
+        "status": "offline",
+        "uptime": "—",
+        "x": 240,
+        "y": 140
+      }
+    },
+    {
+      "id": "pe05",
+      "nodeType": "switch",
+      "position": {
+        "x": 287.64305435047936,
+        "y": 286.2764013826138,
+        "z": 0
+      },
+      "data": {
+        "id": "pe05",
+        "label": "05 PE05-BSB-CORE",
+        "type": "switch",
+        "model": "Huawei_switch",
+        "ip": "10.99.99.5",
+        "status": "online",
+        "uptime": "14d 2h",
+        "x": 320,
+        "y": 60
+      }
+    },
+    {
+      "id": "pe06",
+      "nodeType": "switch",
+      "position": {
+        "x": 1244.3285279836387,
+        "y": 0,
+        "z": 0
+      },
+      "data": {
+        "id": "pe06",
+        "label": "06 PE06-BSB-CORE",
+        "type": "switch",
+        "model": "Cisco_switch",
+        "ip": "10.99.99.6",
+        "status": "warning",
+        "uptime": "1d 5h",
+        "x": 680,
+        "y": 60
+      }
+    },
+    {
+      "id": "pe07",
+      "nodeType": "switch",
+      "position": {
+        "x": 1513.2093703946907,
+        "y": 572.2332970211985,
+        "z": 0
+      },
+      "data": {
+        "id": "pe07",
+        "label": "07 PE07-BSB-CORE",
+        "type": "switch",
+        "model": "Cisco_switch",
+        "ip": "10.99.99.7",
+        "status": "online",
+        "uptime": "60d 11h",
+        "x": 860,
+        "y": 280
+      }
+    },
+    {
+      "id": "pe08",
+      "nodeType": "switch",
+      "position": {
+        "x": 904.3561944806034,
+        "y": 974.7710586675425,
+        "z": 0
+      },
+      "data": {
+        "id": "pe08",
+        "label": "08 PE08-BSB-CORE",
+        "type": "switch",
+        "model": "Huawei_switch",
+        "ip": "10.99.99.8",
+        "status": "online",
+        "uptime": "90d 6h",
+        "x": 520,
+        "y": 500
+      }
+    },
+    {
+      "id": "pe09",
+      "nodeType": "switch",
+      "position": {
+        "x": 1294.552799190373,
+        "y": 1437.2723955914364,
+        "z": 0
+      },
+      "data": {
+        "id": "pe09",
+        "label": "09 PE09-BSB-CORE",
+        "type": "switch",
+        "model": "Huawei_switch",
+        "ip": "10.99.99.9",
+        "status": "online",
+        "uptime": "33d 2h",
+        "x": 760,
+        "y": 560
+      }
+    },
+    {
+      "id": "pe10",
+      "nodeType": "switch",
+      "position": {
+        "x": 531.1726414690884,
+        "y": 1302.2723955914364,
+        "z": 0
+      },
+      "data": {
+        "id": "pe10",
+        "label": "10 PE10-BSB-CORE",
+        "type": "switch",
+        "model": "Huawei_switch",
+        "ip": "10.99.99.10",
+        "status": "online",
+        "uptime": "48d 9h",
+        "x": 240,
+        "y": 440
+      }
+    },
+    {
+      "id": "pna",
+      "nodeType": "cloud",
+      "position": {
+        "x": 0,
+        "y": 753.4862845576454,
+        "z": 0
+      },
+      "data": {
+        "id": "pna",
+        "label": "PNA/META",
+        "type": "cloud",
+        "model": "Carrier",
+        "ip": "—",
+        "status": "carrier",
+        "uptime": "—",
+        "x": 400,
+        "y": 370
+      }
+    },
+    {
+      "id": "l3",
+      "nodeType": "cloud",
+      "position": {
+        "x": 102.54858872963564,
+        "y": 1201.0946423780267,
+        "z": 0
+      },
+      "data": {
+        "id": "l3",
+        "label": "LEVEL 3_10G8",
+        "type": "cloud",
+        "model": "Carrier",
+        "ip": "—",
+        "status": "carrier",
+        "uptime": "—",
+        "x": 400,
+        "y": 460
+      }
+    },
+    {
+      "id": "l33",
+      "nodeType": "cloud",
+      "position": {
+        "x": 0,
+        "y": 1761.2931620282245,
+        "z": 0
+      },
+      "data": {
+        "id": "l33",
+        "label": "LEVEL 3_10G8",
+        "type": "cloud",
+        "model": "Carrier",
+        "ip": "—",
+        "status": "unknown",
+        "uptime": "—",
+        "x": 500,
+        "y": 560
+      }
+    }
+  ],
+  "links": [
+    {
+      "id": "link-pe01-pna",
+      "connectionType": "ftth",
+      "from": {
+        "node": "pe01",
+        "port": "port"
+      },
+      "to": {
+        "node": "pna",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe01",
+        "t": "pna",
+        "type": "ftth",
+        "bw": "10G",
+        "usage": 55,
+        "latency": 1
+      }
+    },
+    {
+      "id": "link-pe01-l3",
+      "connectionType": "ftth",
+      "from": {
+        "node": "pe01",
+        "port": "port"
+      },
+      "to": {
+        "node": "l3",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe01",
+        "t": "l3",
+        "type": "ftth",
+        "bw": "10G",
+        "usage": 40,
+        "latency": 12
+      }
+    },
+    {
+      "id": "link-pe01-pe05",
+      "connectionType": "ether",
+      "from": {
+        "node": "pe01",
+        "port": "port"
+      },
+      "to": {
+        "node": "pe05",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe01",
+        "t": "pe05",
+        "type": "ether",
+        "bw": "1G",
+        "usage": 72,
+        "latency": 13
+      }
+    },
+    {
+      "id": "link-pe02-pe06",
+      "connectionType": "ether",
+      "from": {
+        "node": "pe02",
+        "port": "port"
+      },
+      "to": {
+        "node": "pe06",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe02",
+        "t": "pe06",
+        "type": "ether",
+        "bw": "1G",
+        "usage": 30,
+        "latency": 43
+      }
+    },
+    {
+      "id": "link-pe02-pe07",
+      "connectionType": "ether",
+      "from": {
+        "node": "pe02",
+        "port": "port"
+      },
+      "to": {
+        "node": "pe07",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe02",
+        "t": "pe07",
+        "type": "ether",
+        "bw": "1G",
+        "usage": 60,
+        "latency": 123
+      }
+    },
+    {
+      "id": "link-pe01-pe02",
+      "connectionType": "ether",
+      "from": {
+        "node": "pe01",
+        "port": "port"
+      },
+      "to": {
+        "node": "pe02",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe01",
+        "t": "pe02",
+        "type": "ether",
+        "bw": "1G",
+        "usage": 45,
+        "latency": 223
+      }
+    },
+    {
+      "id": "link-pe01-pe08",
+      "connectionType": "ether",
+      "from": {
+        "node": "pe01",
+        "port": "port"
+      },
+      "to": {
+        "node": "pe08",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe01",
+        "t": "pe08",
+        "type": "ether",
+        "bw": "1G",
+        "usage": 20,
+        "latency": 14
+      }
+    },
+    {
+      "id": "link-pe01-pe03",
+      "connectionType": "ether",
+      "from": {
+        "node": "l33",
+        "port": "port"
+      },
+      "to": {
+        "node": "pe03",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe01",
+        "t": "pe03",
+        "type": "ether",
+        "bw": "1G",
+        "usage": 35,
+        "latency": 33
+      }
+    },
+    {
+      "id": "link-pe03-pe04",
+      "connectionType": "ether",
+      "from": {
+        "node": "pe03",
+        "port": "port"
+      },
+      "to": {
+        "node": "pe04",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe03",
+        "t": "pe04",
+        "type": "ether",
+        "bw": "1G",
+        "usage": 0,
+        "latency": 9999
+      }
+    },
+    {
+      "id": "link-pe04-pe09",
+      "connectionType": "ether",
+      "from": {
+        "node": "pe04",
+        "port": "port"
+      },
+      "to": {
+        "node": "pe09",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe04",
+        "t": "pe09",
+        "type": "ether",
+        "bw": "1G",
+        "usage": 50,
+        "latency": 9999
+      }
+    },
+    {
+      "id": "link-pe01-pe10",
+      "connectionType": "ether",
+      "from": {
+        "node": "pe01",
+        "port": "port"
+      },
+      "to": {
+        "node": "pe10",
+        "port": "port"
+      },
+      "data": {
+        "s": "pe01",
+        "t": "pe10",
+        "type": "ether",
+        "bw": "1G",
+        "usage": 25,
+        "latency": 123
+      }
+    }
+  ]
+}

@@ -6,6 +6,8 @@ export const LinkInfoContext = createContext<LinkInfoContextValue>({
     id: "",
     from: { node: "", port: "" },
     to: { node: "", port: "" },
+    fromAnchor: null,
+    toAnchor: null,
     fromNode: null,
     fromPort: null,
     toNode: null,

@@ -3,7 +3,6 @@
 import { useEffect, useContext, useCallback, useRef } from "react";
 import { usePortDrag, usePortDrop } from "../hooks/connection";
 import { ConnectionContext } from "../context/connection-context";
-import useGraphMode from "../hooks/graph-mode";
 import useNodeRegistry from "../hooks/node-registry";
 import { GraphPortProps } from "../types";
 
@@ -21,26 +20,30 @@ export default function GraphPort({
     onClick, onMouseOver, onMouseLeave, ...props
 }: GraphPortProps) {
     const { registerPort, unregisterPort, getGraphApi } = useContext(ConnectionContext);
-    const mode = useGraphMode();
     const registry = useNodeRegistry();
     const portRef = useRef<HTMLDivElement>(null);
     const { dragHandlers, isDragging, canDrag } = usePortDrag(
         props.nodeId,
         props.id,
-        props.connectionType
+        props.connectionType,
+        props.mode,
     );
     const { dropHandlers, canDrop } = usePortDrop(
         props.nodeId,
         props.id,
-        props.connectionType
+        props.connectionType,
+        props.mode,
     );
+    const connectionContext = useContext(ConnectionContext);
+    const connectionContextRef = useRef<typeof connectionContext>(connectionContext);
 
     useEffect(() => {
         registerPort({
             nodeId: props.nodeId,
-            portName: props.id,
+            PortID: props.id,
             connectionType: props.connectionType,
             direction: props.direction,
+            location: props.location,
             onDragEnd: props.onDragEnd,
         });
         return () => {
@@ -51,10 +54,15 @@ export default function GraphPort({
         props.id,
         props.connectionType,
         props.direction,
+        props.location,
         props.onDragEnd,
         registerPort,
         unregisterPort,
     ]);
+
+    useEffect(() => {
+        connectionContextRef.current = connectionContext;
+    }, [connectionContext])
 
     // Registra o elemento DOM da porta no NodeRegistry
     useEffect(() => {
@@ -62,6 +70,32 @@ export default function GraphPort({
         registry.registerPortElement(props.nodeId, props.id, portRef.current);
         return () => registry.unregisterPortElement(props.nodeId, props.id);
     }, [props.nodeId, props.id, registry]);
+
+    const notifyDraggingOver = useCallback(() => {
+        const { active } = connectionContextRef.current.dragState;
+        if (!active || props.direction === "output") return;
+
+        connectionContextRef.current.dragOverPort(
+            props.nodeId,
+            props.id,
+            props.connectionType
+        );
+    }, [props.nodeId, props.id, props.connectionType, props.direction]);
+
+
+    const notifyDraggingLeave = useCallback(() => {
+        const currentDragState = connectionContextRef.current.getTempLinkState();
+        const { active } = currentDragState;
+        if (!active) return;
+        const { targetNodeId, targetPortID } = currentDragState;
+        if (
+            active &&
+            targetNodeId === props.nodeId &&
+            targetPortID === props.id
+        ) {
+            connectionContextRef.current.dragLeavePort();
+        }
+    }, [props.nodeId, props.id]);
 
     const forwardClickEvents = useCallback((event: React.MouseEvent) => {
         if (!onClick) return;
@@ -82,6 +116,7 @@ export default function GraphPort({
     }, [getGraphApi, onClick, props.direction, props.id, props.nodeId, props.connectionType])
 
     const forwardMouseOverEvents = useCallback((event: React.MouseEvent) => {
+        notifyDraggingOver()
         if (!onMouseOver) return;
         const api = getGraphApi();
         if (!api) return;
@@ -97,9 +132,10 @@ export default function GraphPort({
             api,
         });
 
-    }, [getGraphApi, onMouseOver, props.direction, props.id, props.nodeId, props.connectionType]);
+    }, [notifyDraggingOver, getGraphApi, onMouseOver, props.direction, props.id, props.nodeId, props.connectionType]);
 
     const forwardMouseLeaveEvents = useCallback((event: React.MouseEvent) => {
+        notifyDraggingLeave()
         if (!onMouseLeave) return;
         const api = getGraphApi();
         if (!api) return;
@@ -114,14 +150,14 @@ export default function GraphPort({
             nativeEvent: event.nativeEvent,
             api,
         });
-    }, [getGraphApi, onMouseLeave, props.direction, props.id, props.nodeId, props.connectionType]);
+    }, [notifyDraggingLeave, getGraphApi, onMouseLeave, props.direction, props.id, props.nodeId, props.connectionType]);
 
 
     const isOutput = props.direction === "output" || props.direction === "bidirectional";
     const isInput = props.direction === "input" || props.direction === "bidirectional";
 
     const handlers =
-        mode === "edit"
+        props.mode === "edit"
             ? {
                 ...(isOutput ? dragHandlers : {}),
                 ...(isInput ? dropHandlers : {}),
@@ -134,7 +170,7 @@ export default function GraphPort({
             : props.direction;
     const portLocationAttr = typeof props.location === "string"
         ? props.location
-        : "coordinates";
+        : "vector";
 
     return (
         <node-graph-port

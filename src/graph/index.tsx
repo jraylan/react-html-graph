@@ -271,6 +271,10 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
         });
     }, [nodeStateRef]);
 
+    const getZoom = useCallback(() => {
+        return viewboxRef.current.zoom;
+    }, []);
+
     // Resolve nodeType do registro para obter portas e template
     const nodes = useMemo(() =>
         nodeDefs.map(def => {
@@ -284,6 +288,8 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
                 <GraphObject
                     key={def.id}
                     id={def.id}
+                    mode={mode}
+                    getZoom={getZoom}
                     ports={ports}
                     data={def.data}
                     initialPosition={def.position}
@@ -294,7 +300,7 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
                 </GraphObject>
             );
         }),
-        [handleNodeMove, handleNodeStateChange, nodeDefs, internal._nodeTypeRegistry, internal._defaultNodeTemplate]
+        [getZoom, handleNodeMove, handleNodeStateChange, mode, nodeDefs, internal._nodeTypeRegistry, internal._defaultNodeTemplate]
     );
 
     // Resolve template do registro por connectionType
@@ -310,7 +316,15 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
             if (!template) return null;
 
             return (
-                <GraphLink key={def.id} id={def.id} from={def.from} to={def.to} data={def.data} template={template} onStateChange={handleLinkStateChange} />
+                <GraphLink
+                    key={def.id}
+                    id={def.id}
+                    from={def.from}
+                    to={def.to}
+                    data={def.data}
+                    template={template}
+                    onStateChange={handleLinkStateChange}
+                />
             );
         }),
         [handleLinkStateChange, linkDefs, internal._linkTemplateRegistry, internal._defaultLinkTemplate]
@@ -460,12 +474,13 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
                 viewbox,
                 nodes,
                 links,
+                tempLinkTemplate: internal._defaultTempLinkTemplate ?? undefined,
                 mode,
             }}>
                 <GraphRootContext.Provider value={rootRef}>
                     <NodeRegistryProvider>
                         <GraphEventBusProvider>
-                            <ConnectionProvider graphApi={api}>
+                            <ConnectionProvider graphApi={api} mode={mode} viewboxRef={viewboxRef}>
                                 <GraphHandle
                                     api={api}
                                     rootRef={rootRef}

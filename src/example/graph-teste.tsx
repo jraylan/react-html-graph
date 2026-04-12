@@ -3,10 +3,7 @@ import Graph from "../graph";
 import {
     GraphApplyLayoutInput,
     GraphApi,
-    GraphSerializedState,
-    LinkDefinition,
     NodeObjectTemplateProps,
-    NodeDefinition,
     PortRenderProps,
     PortDragEndEvent,
 } from "../types";
@@ -14,36 +11,7 @@ import BidirectionalPath from "../paths/bidirectional-path";
 import useLinkInfo from "../hooks/link-info";
 import useGraphApi from "../hooks/use-graph-api";
 
-
-const MOCK_DEVICES = [
-    { id: 'pe01', label: '01 PE01-BSB-CORE', type: 'router', model: 'Huawei_router', ip: '10.99.99.1', status: 'online', uptime: '287d 4h', x: 480, y: 300 },
-    { id: 'pe02', label: '02 PE02-BSB-CORE', type: 'router', model: 'Huawei_router', ip: '10.99.99.2', status: 'online', uptime: '102d 7h', x: 700, y: 460 },
-    { id: 'pe03', label: '03 PE03-BSB-CORE', type: 'switch', model: 'Huawei_switch', ip: '10.99.99.3', status: 'online', uptime: '55d 3h', x: 700, y: 140 },
-    { id: 'pe04', label: '04 PE04-BSB-CORE', type: 'switch', model: 'Huawei_switch', ip: '10.99.99.4', status: 'offline', uptime: '—', x: 240, y: 140 },
-    { id: 'pe05', label: '05 PE05-BSB-CORE', type: 'switch', model: 'Huawei_switch', ip: '10.99.99.5', status: 'online', uptime: '14d 2h', x: 320, y: 60 },
-    { id: 'pe06', label: '06 PE06-BSB-CORE', type: 'switch', model: 'Cisco_switch', ip: '10.99.99.6', status: 'warning', uptime: '1d 5h', x: 680, y: 60 },
-    { id: 'pe07', label: '07 PE07-BSB-CORE', type: 'switch', model: 'Cisco_switch', ip: '10.99.99.7', status: 'online', uptime: '60d 11h', x: 860, y: 280 },
-    { id: 'pe08', label: '08 PE08-BSB-CORE', type: 'switch', model: 'Huawei_switch', ip: '10.99.99.8', status: 'online', uptime: '90d 6h', x: 520, y: 500 },
-    { id: 'pe09', label: '09 PE09-BSB-CORE', type: 'switch', model: 'Huawei_switch', ip: '10.99.99.9', status: 'online', uptime: '33d 2h', x: 760, y: 560 },
-    { id: 'pe10', label: '10 PE10-BSB-CORE', type: 'switch', model: 'Huawei_switch', ip: '10.99.99.10', status: 'online', uptime: '48d 9h', x: 240, y: 440 },
-    { id: 'pna', label: 'PNA/META', type: 'cloud', model: 'Carrier', ip: '—', status: 'carrier', uptime: '—', x: 400, y: 370 },
-    { id: 'l3', label: 'LEVEL 3_10G8', type: 'cloud', model: 'Carrier', ip: '—', status: 'carrier', uptime: '—', x: 400, y: 460 },
-    { id: 'l33', label: 'LEVEL 3_10G8', type: 'cloud', model: 'Carrier', ip: '—', status: 'unknown', uptime: '—', x: 500, y: 560 },
-];
-
-const MOCK_LINKS = [
-    { s: 'pe01', t: 'pna', type: "ftth", bw: '10G', usage: 55, latency: 1 },
-    { s: 'pe01', t: 'l3', type: "ftth", bw: '10G', usage: 40, latency: 12 },
-    { s: 'pe01', t: 'pe05', type: "ether", bw: '1G', usage: 72, latency: 13 },
-    { s: 'pe02', t: 'pe06', type: "ether", bw: '1G', usage: 30, latency: 43 },
-    { s: 'pe02', t: 'pe07', type: "ether", bw: '1G', usage: 60, latency: 123 },
-    { s: 'pe01', t: 'pe02', type: "ether", bw: '1G', usage: 45, latency: 223 },
-    { s: 'pe01', t: 'pe08', type: "ether", bw: '1G', usage: 20, latency: 14 },
-    { s: 'pe01', t: 'pe03', type: "ether", bw: '1G', usage: 35, latency: 33 },
-    { s: 'pe03', t: 'pe04', type: "ether", bw: '1G', usage: 0, latency: 9999 },
-    { s: 'pe04', t: 'pe09', type: "ether", bw: '1G', usage: 50, latency: 9999 },
-    { s: 'pe01', t: 'pe10', type: "ether", bw: '1G', usage: 25, latency: 123 },
-];
+import MOCK_TEMPLATE from "./mock-template.json"
 
 const LAYOUTS: Array<{ label: string; algorithm: GraphApplyLayoutInput["algorithm"] }> = [
     { label: "Força direcional", algorithm: "force-direction" },
@@ -180,12 +148,15 @@ function NodePort(props: PortRenderProps) {
     );
 }
 
-function NodeTemplate({ id, ports, data }: NodeObjectTemplateProps<typeof MOCK_DEVICES[number]>) {
+function NodeTemplate({ id, ports, data }: NodeObjectTemplateProps<typeof MOCK_TEMPLATE["nodes"][number]["data"]>) {
     if (!data) return null;
     const colors = COLORS[data.status as keyof typeof COLORS] || COLORS.default;
     return <div style={{ position: "relative" }}>
         <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 10 }}>
-            {ports.all}
+            {ports.floating}
+        </div>
+        <div style={{ position: "absolute", left: "0%", top: "50%", transform: "translate(-50%, -50%)", zIndex: 10 }}>
+            {ports.left}
         </div>
         <div
             style={{ borderColor: colors.border, backgroundColor: colors.bg }}
@@ -230,28 +201,19 @@ let userLinkCounter = 0;
  * termina sobre uma porta válida. Usado para testar conexões interativas.
  */
 async function handlePortDragEnd(api: GraphApi, event: PortDragEndEvent) {
-    if (!event.targetNodeId || !event.targetPortName) return;
+    if (!event.targetNodeId || !event.targetPortID) return;
 
     const linkId = `user-link-${++userLinkCounter}`;
     api.addLink({
         id: linkId,
         connectionType: "ether",
-        from: { node: event.sourceNodeId, port: event.sourcePortName },
-        to: { node: event.targetNodeId, port: event.targetPortName },
+        from: { node: event.sourceNodeId, port: event.sourcePortID },
+        to: { node: event.targetNodeId, port: event.targetPortID },
         data: { s: event.sourceNodeId, t: event.targetNodeId, bw: '1G', usage: 10, latency: 50 },
     });
-    console.log(`[Conexão] ${event.sourceNodeId}:${event.sourcePortName} -> ${event.targetNodeId}:${event.targetPortName} (${linkId})`);
+    console.log(`[Conexão] ${event.sourceNodeId}:${event.sourcePortID} -> ${event.targetNodeId}:${event.targetPortID} (${linkId})`);
 }
 
-function createNode(data: typeof MOCK_DEVICES[number]): NodeDefinition {
-    const { id, x, y } = data;
-    return ({
-        id: id,
-        nodeType: data.type,
-        position: { x: x, y: y, z: 0 },
-        data,
-    });
-}
 
 function lerp(start: number, end: number, t: number) {
     return start * (1 - t) + end * t;
@@ -273,9 +235,10 @@ function calcularDuracaoAnimacao(ping: number) {
 }
 function LinkPath() {
 
-    const { data } = useLinkInfo<typeof MOCK_LINKS[number]>()
+    const { data, fromAnchor, toAnchor, fromNodeState, toNodeState } = useLinkInfo<typeof MOCK_TEMPLATE['links'][number]['data']>()
+    if (!data || !fromAnchor || !toAnchor) return null;
 
-    const offline = MOCK_DEVICES.some(d => (d.id === data.s || d.id === data.t) && d.status === "offline");
+    const offline = fromNodeState?.data?.status === "offline" || toNodeState?.data?.status === "offline";
     const color =
         offline
             ? "#ff3333"
@@ -294,6 +257,9 @@ function LinkPath() {
     return (
 
         <BidirectionalPath
+            from={fromAnchor}
+            to={toAnchor}
+            data={data}
             width={width}
             spacing={2 * width}
             forwardColor={color}
@@ -309,28 +275,8 @@ function LinkPath() {
     )
 }
 
-function createLink(data: typeof MOCK_LINKS[number]): LinkDefinition {
-
-    return {
-        id: `link-${data.s}-${data.t}`,
-        connectionType: data.type,
-        from: {
-            node: data.s,
-            port: "port",
-        },
-        to: {
-            node: data.t,
-            port: "port",
-        },
-        data,
-    };
-}
-
-function createMockSnapshot(): GraphSerializedState<typeof MOCK_DEVICES[number], typeof MOCK_LINKS[number]> {
-    return {
-        nodes: MOCK_DEVICES.map(createNode),
-        links: MOCK_LINKS.map(createLink),
-    };
+function createMockSnapshot() {
+    return JSON.parse(JSON.stringify(MOCK_TEMPLATE));
 }
 
 export default function GraphTest() {
@@ -342,7 +288,7 @@ export default function GraphTest() {
     const [serializationStatus, setSerializationStatus] = useState("Use os botões abaixo para serializar ou restaurar o snapshot do grafo.");
 
     const graphApi = useGraphApi({
-        onReady: (api) => {
+        onReady: async (api) => {
             handleLoadMockSnapshot();
             api.setDefaultNodeTemplate(NodeTemplate);
             api.registerNodeType(
@@ -368,7 +314,7 @@ export default function GraphTest() {
                             id: "port",
                             connectionType: "data",
                             direction: "bidirectional",
-                            location: { x: 0, y: 0 },
+                            location: "left",
                             children: NodePort,
                             onDragEnd: handlePortDragEnd,
                         },
@@ -399,6 +345,9 @@ export default function GraphTest() {
             const snapshot = createMockSnapshot();
             api.load(snapshot);
         },
+        onLoad: async (api) => {
+            await api.centralize({ padding: 48 });
+        }
         // defaultNodeTemplate: (props) => <NodeTemplate {...props} />, // Optional
         // defaultLinkTemplate: (props) => <LinkPath {...props} />, // Optional
     });
@@ -509,7 +458,7 @@ export default function GraphTest() {
                     <button onClick={() => void handleload()}>Desserializar</button>
                     <button onClick={() => void handleLoadMockSnapshot()}>Restaurar demo</button>
                     {LAYOUTS.map(layout => (
-                        <button key={layout.algorithm} onClick={() => void handleApplyLayout(layout.algorithm)}>
+                        <button key={layout.algorithm.toString()} onClick={() => void handleApplyLayout(layout.algorithm)}>
                             {layout.label}
                         </button>
                     ))}

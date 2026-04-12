@@ -7,6 +7,10 @@ import {
     LayoutOutput,
     FitViewInput,
     FitViewOutput,
+    BidirectionalPathInput,
+    BidirectionalPathOutput,
+    BidirectionalLabelsInput,
+    MessageEventData,
 } from './types';
 
 // Fonte do worker — definida como função para que o TypeScript verifique os
@@ -113,17 +117,87 @@ function workerSource() {
     // eslint-disable-next-line no-restricted-globals
     const post = (self as any).postMessage.bind(self);
 
-    // Calcula control point baseado na direcao da porta
-    function controlPoint(
-        x: number, y: number, dir: string, dist: number
-    ): { x: number; y: number } {
-        switch (dir) {
-            case "right": return { x: x + dist, y };
-            case "left": return { x: x - dist, y };
-            case "bottom": return { x, y: y + dist };
-            case "top": return { x, y: y - dist };
-            default: return { x: x + dist, y };
+    function normalizeVector(x: number, y: number) {
+        const magnitude = Math.sqrt(x * x + y * y);
+        if (magnitude === 0) {
+            return { x: 0, y: 0 };
         }
+
+        return {
+            x: x / magnitude,
+            y: y / magnitude,
+        };
+    }
+
+    function directionToVector(dir: string) {
+        switch (dir) {
+            case "right": return { x: 1, y: 0 };
+            case "left": return { x: -1, y: 0 };
+            case "bottom": return { x: 0, y: 1 };
+            case "top": return { x: 0, y: -1 };
+            default: return { x: 0, y: 0 };
+        }
+    }
+
+    // Calcula control point baseado no vetor da porta
+    function controlPoint(
+        x: number, y: number, vector: { x: number; y: number }, dist: number
+    ): { x: number; y: number } {
+        return {
+            x: x + vector.x * dist,
+            y: y + vector.y * dist,
+        };
+    }
+
+    function inferPathVectors(
+        fromX: number,
+        fromY: number,
+        toX: number,
+        toY: number,
+    ) {
+        const dx = toX - fromX;
+        const dy = toY - fromY;
+
+        const forward = normalizeVector(dx, dy);
+        if (forward.x !== 0 || forward.y !== 0) {
+            return {
+                fromVector: forward,
+                toVector: { x: -forward.x, y: -forward.y },
+            };
+        }
+
+        return {
+            fromVector: { x: 1, y: 0 },
+            toVector: { x: -1, y: 0 },
+        };
+    }
+
+    function resolvePathVectors(
+        fromX: number,
+        fromY: number,
+        toX: number,
+        toY: number,
+        fromVector?: { x: number; y: number },
+        toVector?: { x: number; y: number },
+        fromDir?: string,
+        toDir?: string,
+    ) {
+        const inferred = inferPathVectors(fromX, fromY, toX, toY);
+        const resolvedFromVector = fromVector && (fromVector.x !== 0 || fromVector.y !== 0)
+            ? normalizeVector(fromVector.x, fromVector.y)
+            : fromDir
+                ? directionToVector(fromDir)
+                : inferred.fromVector;
+        const resolvedToVector = toVector && (toVector.x !== 0 || toVector.y !== 0)
+            ? normalizeVector(toVector.x, toVector.y)
+            : toDir
+                ? directionToVector(toDir)
+                : inferred.toVector;
+
+        return {
+            fromVector: resolvedFromVector,
+            toVector: resolvedToVector,
+        };
     }
 
     type WorkerLayoutNode = {
@@ -1433,18 +1507,51 @@ function workerSource() {
     }
 
     // eslint-disable-next-line no-restricted-globals
-    (self as any).onmessage = function (e: MessageEvent) {
-        const { type, id, ...data } = e.data;
+    (self as any).onmessage = function (e: MessageEvent<MessageEventData>) {
+        const data = e.data;
+        const { id, type } = data;
 
         if (type === "calculatePath") {
-            const { fromX, fromY, toX, toY, fromDir, toDir, gap, steps } = data;
+            const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, steps } = data;
             const dx = toX - fromX;
             const dy = toY - fromY;
             const dist = Math.sqrt(dx * dx + dy * dy);
             const cpDist = Math.max(50, dist * 0.4);
+            const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
 
-            const cp1 = controlPoint(fromX, fromY, fromDir, cpDist);
-            const cp2 = controlPoint(toX, toY, toDir, cpDist);
+            const cp1 = controlPoint(fromX, fromY, vectors.fromVector, cpDist);
+            const cp2 = controlPoint(toX, toY, vectors.toVector, cpDist);
+            const p0x = fromX, p0y = fromY;
+            const p1x = cp1.x, p1y = cp1.y;
+            const p2x = cp2.x, p2y = cp2.y;
+            const p3x = toX, p3y = toY;
+
+            const centerD = `M ${p0x} ${p0y} C ${p1x} ${p1y} ${p2x} ${p2y} ${p3x} ${p3y}`;
+            const points = sampleOffsetPoints(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, 0, steps);
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const p of points) {
+                if (p.x < minX) minX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y > maxY) maxY = p.y;
+            }
+
+            post({
+                type: "calculatePath", id, pathD: centerD,
+                bounds: { left: minX, top: minY, width: maxX - minX, height: maxY - minY },
+            });
+        }
+        else if (type === "calculateBidirectionalPath") {
+            const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, gap, steps } = data;
+            const dx = toX - fromX;
+            const dy = toY - fromY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const cpDist = Math.max(50, dist * 0.4);
+            const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
+
+            const cp1 = controlPoint(fromX, fromY, vectors.fromVector, cpDist);
+            const cp2 = controlPoint(toX, toY, vectors.toVector, cpDist);
             const p0x = fromX, p0y = fromY;
             const p1x = cp1.x, p1y = cp1.y;
             const p2x = cp2.x, p2y = cp2.y;
@@ -1468,21 +1575,61 @@ function workerSource() {
             minX -= padding; minY -= padding; maxX += padding; maxY += padding;
 
             post({
-                type: "calculatePath", id, centerD,
+                type: "calculateBidirectionalPath", id, centerD,
                 forwardD: pointsToSmoothPath(fwdPoints),
                 reverseD: pointsToSmoothPath(revPoints),
                 bounds: { left: minX, top: minY, width: maxX - minX, height: maxY - minY },
             });
         }
         else if (type === "calculateLabels") {
-            const { fromX, fromY, toX, toY, fromDir, toDir, halfGap, labels } = data;
+            const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, labels } = data;
             const dx = toX - fromX;
             const dy = toY - fromY;
             const dist = Math.sqrt(dx * dx + dy * dy);
             const cpDist = Math.max(50, dist * 0.4);
+            const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
 
-            const cp1 = controlPoint(fromX, fromY, fromDir, cpDist);
-            const cp2 = controlPoint(toX, toY, toDir, cpDist);
+            const cp1 = controlPoint(fromX, fromY, vectors.fromVector, cpDist);
+            const cp2 = controlPoint(toX, toY, vectors.toVector, cpDist);
+            const p0x = fromX, p0y = fromY;
+            const p1x = cp1.x, p1y = cp1.y;
+            const p2x = cp2.x, p2y = cp2.y;
+            const p3x = toX, p3y = toY;
+
+            const TABLE_SIZE = 200;
+            const table = buildLengthTable(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, TABLE_SIZE);
+            const totalLen = table[TABLE_SIZE];
+
+            const positions = (labels as any[]).map((lbl: any) => {
+                const normalizedPos = Math.max(-1, Math.min(1, lbl.position));
+                const targetLen = ((normalizedPos + 1) / 2) * totalLen;
+                const t = parameterAtLength(table, targetLen);
+                const point = cubicBezier(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
+                const norm = normalAt(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
+
+                if (lbl.side === "forward" || lbl.side === "reverse") {
+                    const sign = lbl.side === "forward" ? -1 : 1;
+                    const totalDisplacement = ((lbl.offset ?? 0)) * sign;
+                    const x = point.x + norm.x * totalDisplacement;
+                    const y = point.y + norm.y * totalDisplacement;
+                    const outNx = norm.x * sign;
+                    return { x, y, textAnchor: outNx < 0 ? "end" : "start" };
+                }
+
+                return { x: point.x, y: point.y, textAnchor: "middle" };
+            });
+
+            post({ type: "calculateLabels", id, positions });
+        } else if (type === "calculateBidirectionalLabels") {
+            const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, halfGap, labels } = data;
+            const dx = toX - fromX;
+            const dy = toY - fromY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const cpDist = Math.max(50, dist * 0.4);
+            const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
+
+            const cp1 = controlPoint(fromX, fromY, vectors.fromVector, cpDist);
+            const cp2 = controlPoint(toX, toY, vectors.toVector, cpDist);
             const p0x = fromX, p0y = fromY;
             const p1x = cp1.x, p1y = cp1.y;
             const p2x = cp2.x, p2y = cp2.y;
@@ -1511,7 +1658,7 @@ function workerSource() {
                 return { x: point.x, y: point.y, textAnchor: "middle" };
             });
 
-            post({ type: "calculateLabels", id, positions });
+            post({ type: "calculateBidirectionalLabels", id, positions });
         }
         else if (type === "calculateLayout") {
             const result = calculateLayoutResult(data);
@@ -1597,6 +1744,31 @@ function request<T>(message: Record<string, unknown>): Promise<T> {
 export function calculatePath(input: PathInput): Promise<PathOutput> {
     return request<PathOutput>({ type: "calculatePath", ...input });
 }
+
+/**
+ * Calcula os paths SVG (forward/reverse/center) e os bounds para um link
+ * entre duas portas. Esta função delega o trabalho a um worker do pool.
+ *
+ * @param input Dados de entrada para o cálculo do path
+ * @returns Promise contendo os dados de path e bounds
+ */
+export function calculateBidirectionalPath(input: BidirectionalPathInput): Promise<BidirectionalPathOutput> {
+    return request<BidirectionalPathOutput>({ type: "calculateBidirectionalPath", ...input });
+}
+
+
+/**
+ * Calcula as posições dos rótulos (labels) ao longo do caminho entre duas
+ * portas. Retorna um array de posições que devem ser aplicadas como atributos
+ * de texto no DOM SVG.
+ *
+ * @param input Dados de entrada para cálculo de labels
+ * @returns Promise com posições dos labels
+ */
+export function calculateBidirectionalLabels(input: BidirectionalLabelsInput): Promise<{ positions: LabelOutput[] }> {
+    return request<{ positions: LabelOutput[] }>({ type: "calculateBidirectionalLabels", ...input });
+}
+
 
 /**
  * Calcula as posições dos rótulos (labels) ao longo do caminho entre duas

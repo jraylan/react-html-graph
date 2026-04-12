@@ -9,6 +9,6 @@ import { GraphContext } from "../context/graph-context"
  * @returns {{ nodes: React.ReactNode[], links: React.ReactNode[] }}
  */
 export default function useGraphItems() {
-    const { nodes, links } = useContext(GraphContext)
-    return { nodes, links }
+    const { nodes, links, tempLinkTemplate } = useContext(GraphContext)
+    return { nodes, links, tempLinkTemplate }
 }

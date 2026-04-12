@@ -14,6 +14,7 @@ import type {
     NodeObjectTemplateProps,
     LinkInfoContextValue,
     GraphSerializedState,
+    TempLinkInfoContextValue,
 } from "../types";
 
 
@@ -27,10 +28,14 @@ export interface GraphApiInternal extends GraphApi {
     _defaultNodeTemplate: ((props: NodeObjectTemplateProps) => React.ReactNode) | null;
     /** Template padrão para links sem tipo registrado. */
     _defaultLinkTemplate: ((props: LinkInfoContextValue) => React.ReactNode) | null;
+    /** Template padrão do link temporário durante um drag entre portas. */
+    _defaultTempLinkTemplate: ((props: TempLinkInfoContextValue) => React.ReactNode) | null;
     /** Indica se o Graph já se conectou. */
     _connected: boolean;
     /** Callback chamado quando o Graph conecta. */
-    _onReady: ((api: GraphApi) => void) | null;
+    _onReady: ((api: GraphApi) => Promise<void>) | null;
+    /** Callback chamado sempre que um snapshot é carregado via load(). */
+    _onLoad: ((api: GraphApi) => Promise<void>) | null;
     /** Vincula implementações reais vindas do Graph. */
     _bind(impl: GraphApiBindings): void;
     /** Desvincula implementações ao desmontar o Graph. */
@@ -56,7 +61,8 @@ export interface GraphApiBindings {
 
 export interface UseGraphApiOptions {
     /** Chamado uma vez quando o Graph monta e conecta a API. */
-    onReady?: (api: GraphApi) => void;
+    onReady?: (api: GraphApi) => Promise<void>;
+    onLoad?: (api: GraphApi) => Promise<void>;
 }
 
 /** No-op para métodos ainda não conectados. */
@@ -65,7 +71,10 @@ const NOOP_ARRAY = () => [] as any[];
 const NOOP_PROMISE = () => Promise.resolve({} as any);
 const NOOP_SERIALIZE = () => ({ nodes: [], links: [] } as GraphSerializedState);
 
-function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): GraphApiInternal {
+function createGraphApiInternal(
+    onReady: ((api: GraphApi) => Promise<void>) | null,
+    onLoad: ((api: GraphApi) => Promise<void>) | null,
+): GraphApiInternal {
     const nodeTypeRegistry = new Map<string, NodeTypeDefinition>();
     const linkTemplateRegistry = new Map<string, (props: LinkInfoContextValue) => React.ReactNode>();
 
@@ -75,8 +84,10 @@ function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): Grap
         _linkTemplateRegistry: linkTemplateRegistry,
         _defaultNodeTemplate: null,
         _defaultLinkTemplate: null,
+        _defaultTempLinkTemplate: null,
         _connected: false,
         _onReady: onReady,
+        _onLoad: onLoad,
 
         registerNodeType(name: string, definition: NodeTypeDefinition) {
             nodeTypeRegistry.set(name, definition);
@@ -89,6 +100,9 @@ function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): Grap
         },
         setDefaultLinkTemplate(template: (props: LinkInfoContextValue) => React.ReactNode) {
             api._defaultLinkTemplate = template;
+        },
+        setDefaultTempLinkTemplate(template: (props: TempLinkInfoContextValue) => React.ReactNode) {
+            api._defaultTempLinkTemplate = template;
         },
 
         // Métodos de manipulação — no-ops até _bind
@@ -119,11 +133,24 @@ function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): Grap
             api.centralize = impl.centralize;
             api.applyLayout = impl.applyLayout;
             api.serialize = impl.serialize;
-            api.load = impl.load;
+            api.load = function (input: string | GraphSerializedState<any, any>) {
+                impl.load(input);
+                const promise = api._onLoad?.bind(api)(api);
+                if (promise) {
+                    promise.catch((error) => {
+                        console.error("Error in onLoad callback:", error);
+                    });
+                }
+            }
 
             if (!api._connected) {
                 api._connected = true;
-                api._onReady?.(api);
+                const promise = api._onReady?.bind(api)(api);
+                if (promise) {
+                    promise.catch((error) => {
+                        console.error("Error in onReady callback:", error);
+                    });
+                }
             }
         },
 
@@ -159,7 +186,7 @@ function createGraphApiInternal(onReady: ((api: GraphApi) => void) | null): Grap
 export default function useGraphApi(options?: UseGraphApiOptions): GraphApi {
     const apiRef = useRef<GraphApiInternal>(null);
     if (!apiRef.current) {
-        apiRef.current = createGraphApiInternal(options?.onReady ?? null);
+        apiRef.current = createGraphApiInternal(options?.onReady ?? null, options?.onLoad ?? null);
     }
     return apiRef.current;
 }
