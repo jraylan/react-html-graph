@@ -1,4 +1,4 @@
-import { GPU } from "gpu.js";
+import { GPU, type GPUInstance } from "../vendor/gpu";
 import { WebWorkerProvider } from "./index";
 import type {
     BidirectionalLabelsInput,
@@ -280,7 +280,7 @@ function resolveQuadraticCurve(input: {
 }
 
 export class GPUProvider implements MathProvider {
-    private gpu: GPU | null = null;
+    private gpu: GPUInstance | null = null;
     private sampleKernel: Kernel | null = null;
     private workerFallbackProvider: WebWorkerProvider | null = null;
     private executionMode: GPUExecutionMode | null = null;
