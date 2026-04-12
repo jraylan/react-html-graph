@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.0.0](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v1.2.5...react-html-graph-v2.0.0) (2026-04-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* add adaptive math providers and live anchor previews for link rendering
+* add adaptive math providers and live anchor previews for link rendering fix: keep drag updates and labels in sync without rerendering on each mousemove
+* move link and temp-link anchor resolution out of the path layer and normalize port locations as Vector2
+* add default temp link template support and wire the graph api load callback
+* make path components consume resolved anchor geometry only
+
+### Features
+
+* add default temp link template support and wire the graph api load callback ([0cd811b](https://github.com/jraylan/react-html-graph/commit/0cd811b3f8a6262bd7019126e3c00de3394684d0))
+
+
+### Bug Fixes
+
+* infer fallback link tangents from continuous normalized vectors instead of cardinal directions ([0cd811b](https://github.com/jraylan/react-html-graph/commit/0cd811b3f8a6262bd7019126e3c00de3394684d0))
+* keep drag updates and labels in sync without rerendering on each mousemove ([5cc2a70](https://github.com/jraylan/react-html-graph/commit/5cc2a700b57d0bc54144773fef0c07e5284323fa))
+* keep node dragging stable when zoom changes during drag without cascading rerenders ([0cd811b](https://github.com/jraylan/react-html-graph/commit/0cd811b3f8a6262bd7019126e3c00de3394684d0))
+* update the default temp link imperatively and seed drag state from the initial pointer position ([0cd811b](https://github.com/jraylan/react-html-graph/commit/0cd811b3f8a6262bd7019126e3c00de3394684d0))
+
+
+### Code Refactoring
+
+* add adaptive math providers and live anchor previews for link rendering ([5cc2a70](https://github.com/jraylan/react-html-graph/commit/5cc2a700b57d0bc54144773fef0c07e5284323fa))
+* add adaptive math providers and live anchor previews for link rendering fix: keep drag updates and labels in sync without rerendering on each mousemove ([1b507c8](https://github.com/jraylan/react-html-graph/commit/1b507c89d8df21681d2c3582f18f989ee9fb9d97))
+* make path components consume resolved anchor geometry only ([0cd811b](https://github.com/jraylan/react-html-graph/commit/0cd811b3f8a6262bd7019126e3c00de3394684d0))
+* move link and temp-link anchor resolution out of the path layer and normalize port locations as Vector2 ([0cd811b](https://github.com/jraylan/react-html-graph/commit/0cd811b3f8a6262bd7019126e3c00de3394684d0))
+
 ## [1.2.5](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v1.2.4...react-html-graph-v1.2.5) (2026-04-11)
 
 
