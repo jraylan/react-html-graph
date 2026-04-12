@@ -6,7 +6,6 @@
 ### ⚠ BREAKING CHANGES
 
 * add adaptive math providers and live anchor previews for link rendering
-* add adaptive math providers and live anchor previews for link rendering fix: keep drag updates and labels in sync without rerendering on each mousemove
 * move link and temp-link anchor resolution out of the path layer and normalize port locations as Vector2
 * add default temp link template support and wire the graph api load callback
 * make path components consume resolved anchor geometry only
