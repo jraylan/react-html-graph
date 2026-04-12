@@ -26,12 +26,13 @@ import {
     GraphSerializedState,
     Point3D,
 } from "../types";
+import type { MathProvider } from "../calculations/types";
 import { GraphApiInternal, GraphApiBindings } from "../hooks/use-graph-api";
-import { calculateFitView } from "../calculations";
 import { GraphContext } from "../context/graph-context";
 import { ErrorContext } from "../context/error-context";
 import { ConnectionContext } from "../context/connection-context";
 import { GraphRootContext } from "../context/graph-root-context";
+import { MathProviderContext } from "../context/math-provider-context";
 import ConnectionProvider from "../providers/connection-provider";
 import NodeRegistryProvider from "../providers/node-registry-provider";
 import GraphEventBusProvider from "../providers/graph-event-bus-provider";
@@ -234,6 +235,7 @@ function getSnapshotBounds(nodes: GraphLayoutNode[]) {
 export default function Graph({ api, mode = "edit", onError }: GraphProps) {
     const rootRef = useRef<HTMLElement>(null)
     const internal = api as GraphApiInternal;
+    const [mathProvider, setMathProvider] = useState<MathProvider>(() => internal.getMathProvider());
     const [nodeDefs, setNodeDefs] = useState<NodeDefinition[]>([]);
     const [linkDefs, setLinkDefs] = useState<LinkDefinition[]>([]);
     const [viewbox, setViewBoxState] = useState<Viewbox>({
@@ -398,6 +400,19 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
 
 
     useEffect(() => {
+        setMathProvider(internal.getMathProvider());
+        return internal._subscribeMathProvider(setMathProvider);
+    }, [internal]);
+
+    useEffect(() => {
+        return () => {
+            Promise.resolve(internal.getMathProvider().dispose()).catch((error) => {
+                console.error("Erro ao descartar o provider matemático do grafo:", error);
+            });
+        };
+    }, [internal]);
+
+    useEffect(() => {
         const el = rootRef.current;
         if (!el) return;
 
@@ -470,43 +485,46 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
 
     return (
         <ErrorContext.Provider value={{ reportError: handleError }}>
-            <GraphContext.Provider value={{
-                viewbox,
-                nodes,
-                links,
-                tempLinkTemplate: internal._defaultTempLinkTemplate ?? undefined,
-                mode,
-            }}>
-                <GraphRootContext.Provider value={rootRef}>
-                    <NodeRegistryProvider>
-                        <GraphEventBusProvider>
-                            <ConnectionProvider graphApi={api} mode={mode} viewboxRef={viewboxRef}>
-                                <GraphHandle
-                                    api={api}
-                                    rootRef={rootRef}
-                                    nodeDefs={nodeDefs}
-                                    linkDefs={linkDefs}
-                                    nodeStateRef={nodeStateRef}
-                                    linkStateRef={linkStateRef}
-                                    mode={mode}
-                                    viewboxRef={viewboxRef}
-                                    setViewBox={setViewBox}
-                                    setNodeDefs={setNodeDefs}
-                                    setLinkDefs={setLinkDefs}
-                                />
-                                <graph-root
-                                    ref={rootRef}
-                                    onMouseDown={handleMouseDown}
-                                    onMouseUp={handleMouseUp}
-                                    onMouseMove={handleMouseMove}
-                                >
-                                    <ViewBox />
-                                </graph-root>
-                            </ConnectionProvider>
-                        </GraphEventBusProvider>
-                    </NodeRegistryProvider>
-                </GraphRootContext.Provider>
-            </GraphContext.Provider>
+            <MathProviderContext.Provider value={mathProvider}>
+                <GraphContext.Provider value={{
+                    viewbox,
+                    nodes,
+                    links,
+                    tempLinkTemplate: internal._defaultTempLinkTemplate ?? undefined,
+                    mode,
+                }}>
+                    <GraphRootContext.Provider value={rootRef}>
+                        <NodeRegistryProvider>
+                            <GraphEventBusProvider>
+                                <ConnectionProvider graphApi={api} mode={mode} viewboxRef={viewboxRef}>
+                                    <GraphHandle
+                                        api={api}
+                                        mathProvider={mathProvider}
+                                        rootRef={rootRef}
+                                        nodeDefs={nodeDefs}
+                                        linkDefs={linkDefs}
+                                        nodeStateRef={nodeStateRef}
+                                        linkStateRef={linkStateRef}
+                                        mode={mode}
+                                        viewboxRef={viewboxRef}
+                                        setViewBox={setViewBox}
+                                        setNodeDefs={setNodeDefs}
+                                        setLinkDefs={setLinkDefs}
+                                    />
+                                    <graph-root
+                                        ref={rootRef}
+                                        onMouseDown={handleMouseDown}
+                                        onMouseUp={handleMouseUp}
+                                        onMouseMove={handleMouseMove}
+                                    >
+                                        <ViewBox />
+                                    </graph-root>
+                                </ConnectionProvider>
+                            </GraphEventBusProvider>
+                        </NodeRegistryProvider>
+                    </GraphRootContext.Provider>
+                </GraphContext.Provider>
+            </MathProviderContext.Provider>
         </ErrorContext.Provider>
     );
 }
@@ -521,6 +539,7 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
  */
 function GraphHandle({
     api,
+    mathProvider,
     rootRef,
     nodeDefs,
     linkDefs,
@@ -533,6 +552,7 @@ function GraphHandle({
     setLinkDefs,
 }: {
     api: GraphApi;
+    mathProvider: MathProvider;
     rootRef: React.RefObject<HTMLElement | null>;
     nodeDefs: NodeDefinition[];
     linkDefs: LinkDefinition[];
@@ -648,7 +668,7 @@ function GraphHandle({
         const root = rootRef.current;
         const viewportWidth = root?.clientWidth ?? viewboxRef.current.width;
         const viewportHeight = root?.clientHeight ?? viewboxRef.current.height;
-        const fitResult = await calculateFitView({
+        const fitResult = await mathProvider.calculateFitView({
             nodes: snapshot.nodes.map(node => ({
                 id: node.id,
                 width: node.width,
@@ -674,7 +694,7 @@ function GraphHandle({
         };
         setViewBox(nextViewbox);
         return nextViewbox;
-    }, [buildSnapshot, rootRef, setViewBox, viewboxRef]);
+    }, [buildSnapshot, mathProvider, rootRef, setViewBox, viewboxRef]);
 
     const applyLayout = useCallback(async (input: GraphApplyLayoutInput) => {
         const snapshot = buildSnapshot();
@@ -715,10 +735,10 @@ function GraphHandle({
                 viewport,
             },
         };
-        const result = await executor(layoutInput);
+        const result = await executor(layoutInput, mathProvider);
         applyPositions(result);
         return result;
-    }, [applyPositions, buildSnapshot, mode, rootRef, viewboxRef]);
+    }, [applyPositions, buildSnapshot, mathProvider, mode, rootRef, viewboxRef]);
 
     // Ref que sempre aponta para as closures mais recentes
     const implRef = useRef<GraphApiBindings>({

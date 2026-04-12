@@ -11,6 +11,7 @@ import {
     BidirectionalPathOutput,
     BidirectionalLabelsInput,
     MessageEventData,
+    MathProvider,
 } from './types';
 
 // Fonte do worker — definida como função para que o TypeScript verifique os
@@ -18,47 +19,47 @@ import {
 // Em tempo de execução, Function.toString() retorna o JS compilado (sem tipos TS).
 // Envolvemos em uma IIFE e carregamos em um Blob Worker.
 function workerSource() {
-    function cubicBezier(
+    function quadraticBezier(
         p0x: number, p0y: number, p1x: number, p1y: number,
-        p2x: number, p2y: number, p3x: number, p3y: number, t: number
+        p2x: number, p2y: number, t: number
     ) {
         const t1 = 1 - t;
         return {
-            x: t1 * t1 * t1 * p0x + 3 * t1 * t1 * t * p1x + 3 * t1 * t * t * p2x + t * t * t * p3x,
-            y: t1 * t1 * t1 * p0y + 3 * t1 * t1 * t * p1y + 3 * t1 * t * t * p2y + t * t * t * p3y,
+            x: t1 * t1 * p0x + 2 * t1 * t * p1x + t * t * p2x,
+            y: t1 * t1 * p0y + 2 * t1 * t * p1y + t * t * p2y,
         };
     }
 
-    function cubicBezierTangent(
+    function quadraticBezierTangent(
         p0x: number, p0y: number, p1x: number, p1y: number,
-        p2x: number, p2y: number, p3x: number, p3y: number, t: number
+        p2x: number, p2y: number, t: number
     ) {
         const t1 = 1 - t;
         return {
-            x: 3 * t1 * t1 * (p1x - p0x) + 6 * t1 * t * (p2x - p1x) + 3 * t * t * (p3x - p2x),
-            y: 3 * t1 * t1 * (p1y - p0y) + 6 * t1 * t * (p2y - p1y) + 3 * t * t * (p3y - p2y),
+            x: 2 * t1 * (p1x - p0x) + 2 * t * (p2x - p1x),
+            y: 2 * t1 * (p1y - p0y) + 2 * t * (p2y - p1y),
         };
     }
 
     function normalAt(
         p0x: number, p0y: number, p1x: number, p1y: number,
-        p2x: number, p2y: number, p3x: number, p3y: number, t: number
+        p2x: number, p2y: number, t: number
     ) {
-        const tang = cubicBezierTangent(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
+        const tang = quadraticBezierTangent(p0x, p0y, p1x, p1y, p2x, p2y, t);
         const mag = Math.sqrt(tang.x * tang.x + tang.y * tang.y) || 1;
         return { x: -tang.y / mag, y: tang.x / mag };
     }
 
     function buildLengthTable(
         p0x: number, p0y: number, p1x: number, p1y: number,
-        p2x: number, p2y: number, p3x: number, p3y: number, n: number
+        p2x: number, p2y: number, n: number
     ) {
         const table = new Float64Array(n + 1);
         table[0] = 0;
         let prevX = p0x, prevY = p0y;
         for (let i = 1; i <= n; i++) {
             const t = i / n;
-            const pt = cubicBezier(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
+            const pt = quadraticBezier(p0x, p0y, p1x, p1y, p2x, p2y, t);
             const dx = pt.x - prevX, dy = pt.y - prevY;
             table[i] = table[i - 1] + Math.sqrt(dx * dx + dy * dy);
             prevX = pt.x;
@@ -84,33 +85,42 @@ function workerSource() {
 
     function sampleOffsetPoints(
         p0x: number, p0y: number, p1x: number, p1y: number,
-        p2x: number, p2y: number, p3x: number, p3y: number,
+        p2x: number, p2y: number,
         offset: number, steps: number
     ) {
+        const safeSteps = Math.max(1, Math.floor(steps));
         const points: { x: number; y: number }[] = [];
-        for (let i = 0; i <= steps; i++) {
-            const t = i / steps;
-            const pt = cubicBezier(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
-            const n = normalAt(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
+        for (let i = 0; i <= safeSteps; i++) {
+            const t = i / safeSteps;
+            const pt = quadraticBezier(p0x, p0y, p1x, p1y, p2x, p2y, t);
+            const n = normalAt(p0x, p0y, p1x, p1y, p2x, p2y, t);
             points.push({ x: pt.x + n.x * offset, y: pt.y + n.y * offset });
         }
         return points;
     }
 
-    function pointsToSmoothPath(points: { x: number; y: number }[]) {
+    function pointsToQuadraticPath(points: { x: number; y: number }[]) {
         if (points.length < 2) return "";
+
         let d = "M " + points[0].x + " " + points[0].y;
-        for (let i = 0; i < points.length - 1; i++) {
-            const p0 = points[Math.max(0, i - 1)];
-            const p1 = points[i];
-            const p2 = points[i + 1];
-            const p3 = points[Math.min(points.length - 1, i + 2)];
-            const cp1x = p1.x + (p2.x - p0.x) / 6;
-            const cp1y = p1.y + (p2.y - p0.y) / 6;
-            const cp2x = p2.x - (p3.x - p1.x) / 6;
-            const cp2y = p2.y - (p3.y - p1.y) / 6;
-            d += " C " + cp1x + " " + cp1y + " " + cp2x + " " + cp2y + " " + p2.x + " " + p2.y;
+        if (points.length === 2) {
+            const controlX = (points[0].x + points[1].x) / 2;
+            const controlY = (points[0].y + points[1].y) / 2;
+            return d + " Q " + controlX + " " + controlY + " " + points[1].x + " " + points[1].y;
         }
+
+        for (let i = 1; i < points.length - 1; i++) {
+            const control = points[i];
+            const next = points[i + 1];
+            const midpointX = (control.x + next.x) / 2;
+            const midpointY = (control.y + next.y) / 2;
+            d += " Q " + control.x + " " + control.y + " " + midpointX + " " + midpointY;
+        }
+
+        const lastControl = points[points.length - 2];
+        const lastPoint = points[points.length - 1];
+        d += " Q " + lastControl.x + " " + lastControl.y + " " + lastPoint.x + " " + lastPoint.y;
+
         return d;
     }
 
@@ -197,6 +207,35 @@ function workerSource() {
         return {
             fromVector: resolvedFromVector,
             toVector: resolvedToVector,
+        };
+    }
+
+    function resolveQuadraticCurve(input: {
+        fromX: number;
+        fromY: number;
+        toX: number;
+        toY: number;
+        fromVector?: { x: number; y: number };
+        toVector?: { x: number; y: number };
+        fromDir?: string;
+        toDir?: string;
+    }) {
+        const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir } = input;
+        const dx = toX - fromX;
+        const dy = toY - fromY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const cpDist = Math.max(50, dist * 0.4);
+        const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
+        const cubicCp1 = controlPoint(fromX, fromY, vectors.fromVector, cpDist);
+        const cubicCp2 = controlPoint(toX, toY, vectors.toVector, cpDist);
+
+        return {
+            p0x: fromX,
+            p0y: fromY,
+            p1x: (-fromX + cubicCp1.x * 3 + cubicCp2.x * 3 - toX) / 4,
+            p1y: (-fromY + cubicCp1.y * 3 + cubicCp2.y * 3 - toY) / 4,
+            p2x: toX,
+            p2y: toY,
         };
     }
 
@@ -1513,21 +1552,9 @@ function workerSource() {
 
         if (type === "calculatePath") {
             const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, steps } = data;
-            const dx = toX - fromX;
-            const dy = toY - fromY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const cpDist = Math.max(50, dist * 0.4);
-            const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
-
-            const cp1 = controlPoint(fromX, fromY, vectors.fromVector, cpDist);
-            const cp2 = controlPoint(toX, toY, vectors.toVector, cpDist);
-            const p0x = fromX, p0y = fromY;
-            const p1x = cp1.x, p1y = cp1.y;
-            const p2x = cp2.x, p2y = cp2.y;
-            const p3x = toX, p3y = toY;
-
-            const centerD = `M ${p0x} ${p0y} C ${p1x} ${p1y} ${p2x} ${p2y} ${p3x} ${p3y}`;
-            const points = sampleOffsetPoints(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, 0, steps);
+            const curve = resolveQuadraticCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
+            const centerD = `M ${curve.p0x} ${curve.p0y} Q ${curve.p1x} ${curve.p1y} ${curve.p2x} ${curve.p2y}`;
+            const points = sampleOffsetPoints(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, 0, steps);
 
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
             for (const p of points) {
@@ -1544,23 +1571,11 @@ function workerSource() {
         }
         else if (type === "calculateBidirectionalPath") {
             const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, gap, steps } = data;
-            const dx = toX - fromX;
-            const dy = toY - fromY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const cpDist = Math.max(50, dist * 0.4);
-            const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
-
-            const cp1 = controlPoint(fromX, fromY, vectors.fromVector, cpDist);
-            const cp2 = controlPoint(toX, toY, vectors.toVector, cpDist);
-            const p0x = fromX, p0y = fromY;
-            const p1x = cp1.x, p1y = cp1.y;
-            const p2x = cp2.x, p2y = cp2.y;
-            const p3x = toX, p3y = toY;
-
-            const centerD = `M ${p0x} ${p0y} C ${p1x} ${p1y} ${p2x} ${p2y} ${p3x} ${p3y}`;
+            const curve = resolveQuadraticCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
+            const centerD = `M ${curve.p0x} ${curve.p0y} Q ${curve.p1x} ${curve.p1y} ${curve.p2x} ${curve.p2y}`;
             const halfGap = gap / 2;
-            const fwdPoints = sampleOffsetPoints(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, -halfGap, steps);
-            const revPoints = sampleOffsetPoints(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, halfGap, steps);
+            const fwdPoints = sampleOffsetPoints(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, -halfGap, steps);
+            const revPoints = sampleOffsetPoints(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, halfGap, steps);
 
             const padding = 50 + gap;
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -1576,36 +1591,25 @@ function workerSource() {
 
             post({
                 type: "calculateBidirectionalPath", id, centerD,
-                forwardD: pointsToSmoothPath(fwdPoints),
-                reverseD: pointsToSmoothPath(revPoints),
+                forwardD: pointsToQuadraticPath(fwdPoints),
+                reverseD: pointsToQuadraticPath(revPoints),
                 bounds: { left: minX, top: minY, width: maxX - minX, height: maxY - minY },
             });
         }
         else if (type === "calculateLabels") {
             const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, labels } = data;
-            const dx = toX - fromX;
-            const dy = toY - fromY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const cpDist = Math.max(50, dist * 0.4);
-            const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
-
-            const cp1 = controlPoint(fromX, fromY, vectors.fromVector, cpDist);
-            const cp2 = controlPoint(toX, toY, vectors.toVector, cpDist);
-            const p0x = fromX, p0y = fromY;
-            const p1x = cp1.x, p1y = cp1.y;
-            const p2x = cp2.x, p2y = cp2.y;
-            const p3x = toX, p3y = toY;
+            const curve = resolveQuadraticCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
 
             const TABLE_SIZE = 200;
-            const table = buildLengthTable(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, TABLE_SIZE);
+            const table = buildLengthTable(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, TABLE_SIZE);
             const totalLen = table[TABLE_SIZE];
 
             const positions = (labels as any[]).map((lbl: any) => {
                 const normalizedPos = Math.max(-1, Math.min(1, lbl.position));
                 const targetLen = ((normalizedPos + 1) / 2) * totalLen;
                 const t = parameterAtLength(table, targetLen);
-                const point = cubicBezier(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
-                const norm = normalAt(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
+                const point = quadraticBezier(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, t);
+                const norm = normalAt(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, t);
 
                 if (lbl.side === "forward" || lbl.side === "reverse") {
                     const sign = lbl.side === "forward" ? -1 : 1;
@@ -1622,29 +1626,18 @@ function workerSource() {
             post({ type: "calculateLabels", id, positions });
         } else if (type === "calculateBidirectionalLabels") {
             const { fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir, halfGap, labels } = data;
-            const dx = toX - fromX;
-            const dy = toY - fromY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const cpDist = Math.max(50, dist * 0.4);
-            const vectors = resolvePathVectors(fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir);
-
-            const cp1 = controlPoint(fromX, fromY, vectors.fromVector, cpDist);
-            const cp2 = controlPoint(toX, toY, vectors.toVector, cpDist);
-            const p0x = fromX, p0y = fromY;
-            const p1x = cp1.x, p1y = cp1.y;
-            const p2x = cp2.x, p2y = cp2.y;
-            const p3x = toX, p3y = toY;
+            const curve = resolveQuadraticCurve({ fromX, fromY, toX, toY, fromVector, toVector, fromDir, toDir });
 
             const TABLE_SIZE = 200;
-            const table = buildLengthTable(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, TABLE_SIZE);
+            const table = buildLengthTable(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, TABLE_SIZE);
             const totalLen = table[TABLE_SIZE];
 
             const positions = (labels as any[]).map((lbl: any) => {
                 const normalizedPos = Math.max(-1, Math.min(1, lbl.position));
                 const targetLen = ((normalizedPos + 1) / 2) * totalLen;
                 const t = parameterAtLength(table, targetLen);
-                const point = cubicBezier(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
-                const norm = normalAt(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y, t);
+                const point = quadraticBezier(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, t);
+                const norm = normalAt(curve.p0x, curve.p0y, curve.p1x, curve.p1y, curve.p2x, curve.p2y, t);
 
                 if (lbl.side === "forward" || lbl.side === "reverse") {
                     const sign = lbl.side === "forward" ? -1 : 1;
@@ -1681,6 +1674,8 @@ let pool: PoolWorker[] | null = null;
 let roundRobin = 0;
 let idCounter = 0;
 let configuredSize: number | null = null;
+let poolBlobUrl: string | null = null;
+let providerUsers = 0;
 
 /**
  * Configura o tamanho do pool de workers.
@@ -1703,11 +1698,11 @@ function getPool(): PoolWorker[] {
     if (!pool) {
         const size = configuredSize ?? Math.max(1, Math.min(navigator.hardwareConcurrency ?? 2, 4));
         const code = `(${workerSource.toString()})()`;
-        const blobUrl = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
+        poolBlobUrl = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }));
 
         pool = Array.from({ length: size }, () => {
             const pending = new Map<string, (data: any) => void>();
-            const worker = new Worker(blobUrl);
+            const worker = new Worker(poolBlobUrl!);
             worker.onmessage = (e: MessageEvent) => {
                 const { id, ...rest } = e.data;
                 const cb = pending.get(id);
@@ -1720,6 +1715,26 @@ function getPool(): PoolWorker[] {
         });
     }
     return pool;
+}
+
+export function disposeWorkerPool() {
+    if (!pool) {
+        return;
+    }
+
+    for (const entry of pool) {
+        entry.pending.clear();
+        entry.worker.terminate();
+    }
+
+    pool = null;
+    roundRobin = 0;
+    idCounter = 0;
+
+    if (poolBlobUrl) {
+        URL.revokeObjectURL(poolBlobUrl);
+        poolBlobUrl = null;
+    }
 }
 
 function request<T>(message: Record<string, unknown>): Promise<T> {
@@ -1800,4 +1815,72 @@ export function calculateLayout(input: LayoutInput): Promise<LayoutOutput> {
  */
 export function calculateFitView(input: FitViewInput): Promise<FitViewOutput> {
     return request<FitViewOutput>({ type: "calculateFitView", ...input });
+}
+
+export class WebWorkerProvider implements MathProvider {
+    private active = false;
+
+    setup(): void {
+        if (this.active) {
+            return;
+        }
+
+        this.active = true;
+        providerUsers += 1;
+    }
+
+    calculatePath(input: PathInput): Promise<PathOutput> {
+        this.setup();
+        return calculatePath(input);
+    }
+
+    calculateBidirectionalPath(input: BidirectionalPathInput): Promise<BidirectionalPathOutput> {
+        this.setup();
+        return calculateBidirectionalPath(input);
+    }
+
+    async calculateLabels(input: LabelsInput): Promise<LabelOutput[]> {
+        this.setup();
+        const result = await calculateLabels(input);
+        return result.positions;
+    }
+
+    async calculateBidirectionalLabels(input: BidirectionalLabelsInput): Promise<LabelOutput[]> {
+        this.setup();
+        const result = await calculateBidirectionalLabels(input);
+        return result.positions;
+    }
+
+    calculateLayout(input: LayoutInput): Promise<LayoutOutput> {
+        this.setup();
+        return calculateLayout(input);
+    }
+
+    calculateFitView(input: FitViewInput): Promise<FitViewOutput> {
+        this.setup();
+        return calculateFitView(input);
+    }
+
+    async dispose(): Promise<void> {
+        if (!this.active) {
+            return;
+        }
+
+        this.active = false;
+        providerUsers = Math.max(0, providerUsers - 1);
+
+        if (providerUsers === 0) {
+            disposeWorkerPool();
+        }
+    }
+}
+
+let defaultMathProvider: WebWorkerProvider | null = null;
+
+export function getDefaultMathProvider(): MathProvider {
+    if (!defaultMathProvider) {
+        defaultMathProvider = new WebWorkerProvider();
+    }
+
+    return defaultMathProvider;
 }

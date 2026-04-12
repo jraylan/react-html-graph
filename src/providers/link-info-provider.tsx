@@ -28,7 +28,18 @@ const LinkInfoProvider = memo(function LinkInfoProvider({
     children,
 }: LinkInfoProviderProps) {
     const registry = useNodeRegistry();
-    const { fromAnchor, toAnchor, fromNodeState, toNodeState, invalid } = useLinkAnchors({
+    const {
+        fromAnchor,
+        toAnchor,
+        fromNodeState,
+        toNodeState,
+        invalid,
+        getFromAnchor,
+        getToAnchor,
+        getFromNodeState,
+        getToNodeState,
+        subscribePositionChanges,
+    } = useLinkAnchors({
         id,
         from,
         to,
@@ -71,14 +82,35 @@ const LinkInfoProvider = memo(function LinkInfoProvider({
         data,
         fromAnchor,
         toAnchor,
+        getFromAnchor,
+        getToAnchor,
         get fromNode() { return registry.getNodeElement(from.node); },
         get fromPort() { return registry.getPortElement(from.node, from.port); },
         get toNode() { return registry.getNodeElement(to.node); },
         get toPort() { return registry.getPortElement(to.node, to.port); },
         fromNodeState,
         toNodeState,
+        getFromNodeState,
+        getToNodeState,
+        subscribePositionChanges,
         onStateChange,
-    }), [data, from, fromAnchor, fromNodeState, id, onStateChange, registry, to, toAnchor, toNodeState]);
+    }), [
+        data,
+        from,
+        fromAnchor,
+        fromNodeState,
+        getFromAnchor,
+        getFromNodeState,
+        getToAnchor,
+        getToNodeState,
+        id,
+        onStateChange,
+        registry,
+        subscribePositionChanges,
+        to,
+        toAnchor,
+        toNodeState,
+    ]);
 
     return (
         <LinkInfoContext.Provider value={value}>

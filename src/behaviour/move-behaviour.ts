@@ -19,7 +19,7 @@ export interface UseMoveBehaviourOptions {
     position: Point3D;
     /** Callback chamado ao finalizar o movimento. */
     onMoveEnd?: (newPosition: Point3D) => void;
-    /** Callback chamado durante o arraste para reportar estado. */
+    /** Callback chamado durante o arraste para reportar estado transitório. */
     onMoving?: (currentPosition: Point3D) => void;
     /** Emitter de eventos do nó. */
     eventEmitter?: NodeEventEmitter | null;
@@ -73,7 +73,7 @@ export function useMoveBehaviour({
                 z: position.z,
             };
             onMoveEnd?.(nextPosition);
-            eventEmitter?.("move", { position: nextPosition });
+            eventEmitter?.("move", { position: nextPosition, phase: "commit" });
         }
     }, [position.z, onMoveEnd, eventEmitter]);
 
@@ -96,7 +96,7 @@ export function useMoveBehaviour({
         elementRef.current.style.left = `${newX.toFixed(0)}px`;
         elementRef.current.style.top = `${newY.toFixed(0)}px`;
         onMoving?.(nextPosition);
-        eventEmitter?.("move", { position: nextPosition });
+        eventEmitter?.("move", { position: nextPosition, phase: "live" });
     }, [position.z, getZoom, elementRef, onMoving, eventEmitter]);
 
     // Registra listeners globais de mousemove e mouseup

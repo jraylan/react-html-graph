@@ -1,11 +1,22 @@
-import { useRef, useEffectEvent, useEffect } from "react";
-import { calculatePath, calculateLabels } from "../calculations";
+import { useRef, useCallback, useEffect } from "react";
 import { useViewbox } from "../module";
+import useMathProvider from "../hooks/math-provider";
 import { GraphLinkAnchor, LinkLabel } from "../types";
+import { calculateLiveLabelsPreview, calculateLivePathPreview } from "../utils/link-path-preview";
+import useGetZoom from "../hooks/get-zoom";
+
+const UNIDIRECTIONAL_PATH_STEPS = 5;
+
+type LivePathAnchors = {
+    getFrom: () => GraphLinkAnchor | null;
+    getTo: () => GraphLinkAnchor | null;
+    subscribe: (listener: (phase?: "live" | "commit") => void) => () => void;
+};
 
 export type UnidirectionalPathProps = {
     from: GraphLinkAnchor;
     to: GraphLinkAnchor;
+    liveAnchors?: LivePathAnchors;
     data?: unknown;
     width?: number;
     labels?: LinkLabel[];
@@ -17,6 +28,7 @@ export type UnidirectionalPathProps = {
 export default function UnidirectionalPath({
     from,
     to,
+    liveAnchors,
     width = 3,
     labels,
     color = "#888",
@@ -27,13 +39,23 @@ export default function UnidirectionalPath({
     const pRef = useRef<SVGPathElement>(null);
     const labelGroupRef = useRef<SVGGElement>(null);
     const viewbox = useViewbox();
+    const mathProvider = useMathProvider();
     const calcVersionRef = useRef(0);
+    const liveFrameRef = useRef<number | null>(null);
+    const dashOffset = useRef(0);
+    const cycleLenRef = useRef(0);
+    const getZoom = useGetZoom();
+
 
     // Calcula paths e labels no worker e atualiza DOM diretamente (sem React render)
-    const runCalculation = useEffectEvent(() => {
+    const runCalculation = useCallback(() => {
         const root = rootRef.current;
         const p = pRef.current;
         if (!root || !p) return;
+
+        const resolvedFrom = liveAnchors?.getFrom() ?? from;
+        const resolvedTo = liveAnchors?.getTo() ?? to;
+        if (!resolvedFrom || !resolvedTo) return;
 
         const version = ++calcVersionRef.current;
 
@@ -42,22 +64,22 @@ export default function UnidirectionalPath({
             offset: lbl.offset ?? 0,
         }));
 
-        const pathPromise = calculatePath({
-            fromX: from.x, fromY: from.y,
-            toX: to.x, toY: to.y,
-            fromVector: from.d,
-            toVector: to.d,
-            steps: 60,
+        const pathPromise = mathProvider.calculatePath({
+            fromX: resolvedFrom.x, fromY: resolvedFrom.y,
+            toX: resolvedTo.x, toY: resolvedTo.y,
+            fromVector: resolvedFrom.d,
+            toVector: resolvedTo.d,
+            steps: UNIDIRECTIONAL_PATH_STEPS,
         });
 
         const labelsPromise = labelInputs?.length
-            ? calculateLabels({
-                fromX: from.x,
-                fromY: from.y,
-                toX: to.x,
-                toY: to.y,
-                fromVector: from.d,
-                toVector: to.d,
+            ? mathProvider.calculateLabels({
+                fromX: resolvedFrom.x,
+                fromY: resolvedFrom.y,
+                toX: resolvedTo.x,
+                toY: resolvedTo.y,
+                fromVector: resolvedFrom.d,
+                toVector: resolvedTo.d,
                 labels: labelInputs,
             })
             : Promise.resolve(null);
@@ -80,7 +102,7 @@ export default function UnidirectionalPath({
                 const labelGroup = labelGroupRef.current;
                 if (labelGroup) {
                     const textEls = labelGroup.querySelectorAll<SVGTextElement>("text");
-                    labelResult.positions.forEach((lPos, i) => {
+                    labelResult.forEach((lPos, i) => {
                         const textEl = textEls[i];
                         if (!textEl) return;
                         textEl.setAttribute("x", String(lPos.x));
@@ -92,15 +114,113 @@ export default function UnidirectionalPath({
                 }
             }
         });
-    });
+    }, [from, labels, liveAnchors, mathProvider, to]);
+
+    const runLiveCalculation = useCallback(() => {
+        const root = rootRef.current;
+        const p = pRef.current;
+        if (!root || !p) return;
+
+        const resolvedFrom = liveAnchors?.getFrom() ?? from;
+        const resolvedTo = liveAnchors?.getTo() ?? to;
+        if (!resolvedFrom || !resolvedTo) return;
+
+        const result = calculateLivePathPreview({
+            from: resolvedFrom,
+            to: resolvedTo,
+            steps: UNIDIRECTIONAL_PATH_STEPS,
+        });
+
+        root.style.left = result.bounds.left + "px";
+        root.style.top = result.bounds.top + "px";
+        root.style.width = result.bounds.width + "px";
+        root.style.height = result.bounds.height + "px";
+        root.setAttribute("viewBox", `${result.bounds.left} ${result.bounds.top} ${result.bounds.width} ${result.bounds.height}`);
+        p.setAttribute("d", result.pathD);
+
+        const labelGroup = labelGroupRef.current;
+        if (labelGroup && labels?.length) {
+            const textEls = labelGroup.querySelectorAll<SVGTextElement>("text");
+            const liveLabelPositions = calculateLiveLabelsPreview({
+                from: resolvedFrom,
+                to: resolvedTo,
+                labels: labels.map(label => ({
+                    position: label.position ?? 0,
+                    offset: label.offset ?? 0,
+                })),
+            });
+
+            liveLabelPositions.forEach((labelPosition, index) => {
+                const textEl = textEls[index];
+                if (!textEl) return;
+                textEl.setAttribute("x", String(labelPosition.x));
+                textEl.setAttribute("y", String(labelPosition.y));
+            });
+        }
+    }, [from, labels, liveAnchors, to]);
 
     useEffect(() => {
         runCalculation();
     }, [runCalculation]);
 
-    const pStroke = width / viewbox.zoom;
-    const scaledDash = dashSize / viewbox.zoom;
+    useEffect(() => {
+        if (!liveAnchors) return;
+        return liveAnchors.subscribe((phase) => {
+            if (phase === "live") {
+                if (liveFrameRef.current != null) {
+                    return;
+                }
+
+                liveFrameRef.current = requestAnimationFrame(() => {
+                    liveFrameRef.current = null;
+                    runLiveCalculation();
+                });
+                return;
+            }
+
+            if (liveFrameRef.current != null) {
+                cancelAnimationFrame(liveFrameRef.current);
+                liveFrameRef.current = null;
+            }
+
+            runCalculation();
+        });
+    }, [liveAnchors, runCalculation, runLiveCalculation]);
+
+    useEffect(() => () => {
+        if (liveFrameRef.current != null) {
+            cancelAnimationFrame(liveFrameRef.current);
+            liveFrameRef.current = null;
+        }
+    }, []);
+
+    const zoom = getZoom();
+    const pStroke = width / zoom;
+    const scaledDash = dashSize / zoom;
     const cycleLen = scaledDash;
+    cycleLenRef.current = cycleLen;
+
+    const animateFunction = useCallback((dt: number) => {
+        dashOffset.current += (dt * 1 / animationDuration) * cycleLenRef.current;
+        pRef.current?.style.setProperty("stroke-dashoffset", dashOffset.current.toString());
+    }, [animationDuration])
+
+
+    useEffect(() => {
+        let lastTime = performance.now();
+        const animate = (time: number) => {
+            const dt = time - lastTime;
+            animateFunction(dt / 1000)
+            lastTime = time;
+            requestAnimationFrame(animate);
+        };
+
+        let animationFrameId: number = requestAnimationFrame(animate)
+
+        return () => {
+            cancelAnimationFrame(animationFrameId);
+        }
+    }, [animateFunction])
 
     return (
         <svg ref={rootRef}>

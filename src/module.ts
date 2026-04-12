@@ -1,5 +1,14 @@
 export { default, default as Graph } from "./graph";
-export { calculateFitView, calculateLabels, calculateLayout, calculatePath, configureWorkerPool } from "./calculations";
+export {
+    calculateFitView,
+    calculateLabels,
+    calculateLayout,
+    calculatePath,
+    configureWorkerPool,
+    getDefaultMathProvider,
+    WebWorkerProvider,
+} from "./calculations";
+export { GPUProvider, type GPUProviderMode } from "./calculations/gpu-provider";
 export { ConnectionContext } from "./context/connection-context";
 export { ErrorContext } from "./context/error-context";
 export { GraphContext } from "./context/graph-context";
@@ -17,11 +26,12 @@ export { default as useViewbox } from "./hooks/viewbox";
 export { default as useLinkInfo } from "./hooks/link-info";
 export { default as useNodeRegistry } from "./hooks/node-registry";
 export { default as useGraphEventBus } from "./hooks/graph-event-bus";
-export { default as useGraphApi } from "./hooks/use-graph-api";
+export { createGraphApi, default as useGraphApi } from "./hooks/use-graph-api";
 export { default as GraphLink } from "./link/base";
 export { default as GraphObject } from "./nodes/base";
 export { default as GraphPort } from "./ports/base";
 export { default as BidirectionalPath } from "./paths/bidirectional-path";
 export { useMoveBehaviour } from "./behaviour/move-behaviour";
+export type { MathProvider, MathPrivider } from "./calculations/types";
 export * from "./layouts";
 export * from "./types";

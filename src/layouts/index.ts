@@ -1,4 +1,5 @@
 import { GraphLayoutBuiltinAlgorithm, GraphLayoutInput, GraphLayoutResult } from "../types";
+import type { MathProvider } from "../calculations/types";
 import forceDirectionLayout from "./force-direction-layout";
 import organicLayout from "./organic-layout";
 import radialLayout from "./radial-layout";
@@ -8,7 +9,7 @@ import treeLayout from "./tree-layout";
 
 
 /** Assinatura compartilhada por todos os executores de layout. */
-export type GraphLayoutExecutor = (input: GraphLayoutInput) => Promise<GraphLayoutResult>;
+export type GraphLayoutExecutor = (input: GraphLayoutInput, mathProvider?: MathProvider) => Promise<GraphLayoutResult>;
 
 /** Mapa estável dos algoritmos de layout disponíveis. */
 export const GRAPH_LAYOUT_EXECUTORS: Record<GraphLayoutBuiltinAlgorithm, GraphLayoutExecutor> = {
