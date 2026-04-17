@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.0.0...react-html-graph-v2.1.0) (2026-04-12)
+
+
+### Features
+
+* add VisibilityChangeEvent on nodes ([0f84a43](https://github.com/jraylan/react-html-graph/commit/0f84a4396e4e4de3b442e0007593f79f740b5e17))
+
 ## [2.0.0](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v1.2.5...react-html-graph-v2.0.0) (2026-04-12)
 
 
