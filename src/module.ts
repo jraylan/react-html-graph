@@ -26,6 +26,7 @@ export { default as GraphLink } from "./link/base";
 export { default as GraphObject } from "./nodes/base";
 export { default as GraphPort } from "./ports/base";
 export { default as BidirectionalPath } from "./paths/bidirectional-path";
+export { default as UnidirectionalPath } from "./paths/unidirectional-path";
 export { useMoveBehaviour } from "./behaviour/move-behaviour";
 export type { MathProvider, MathPrivider } from "./calculations/types";
 export * from "./layouts";
