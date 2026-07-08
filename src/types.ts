@@ -123,6 +123,8 @@ export interface GraphApi {
     centralize(options?: GraphCentralizeOptions): Promise<Viewbox>;
     /** Retorna o viewbox atual (posição no mundo, tamanho e zoom). */
     getViewbox(): Viewbox;
+    /** Atualiza o viewbox (mescla os campos informados). */
+    setViewbox(viewbox: Partial<Viewbox>): void;
     /** Aplica um algoritmo de layout aos nós do grafo. */
     applyLayout(input: GraphApplyLayoutInput): Promise<GraphLayoutResult>;
     /** Serializa o snapshot atual de nós e links do grafo. */

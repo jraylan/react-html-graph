@@ -69,6 +69,7 @@ export interface GraphApiBindings {
     getNodeStates(): GraphNodeRuntimeState[];
     getLinkStates(): GraphLinkRuntimeState[];
     getViewbox(): Viewbox;
+    setViewbox(viewbox: Partial<Viewbox>): void;
     centralize(options?: GraphCentralizeOptions): Promise<Viewbox>;
     applyLayout(input: GraphApplyLayoutInput): Promise<GraphLayoutResult>;
     serialize(): GraphSerializedState;
@@ -144,6 +145,7 @@ export function createGraphApiInternal(
         getNodeStates: NOOP_ARRAY,
         getLinkStates: NOOP_ARRAY,
         getViewbox: () => ({ x: 0, y: 0, width: 0, height: 0, zoom: 1 }),
+        setViewbox: NOOP,
         centralize: NOOP_PROMISE,
         applyLayout: NOOP_PROMISE,
         serialize: NOOP_SERIALIZE,
@@ -182,6 +184,7 @@ export function createGraphApiInternal(
             api.getNodeStates = impl.getNodeStates;
             api.getLinkStates = impl.getLinkStates;
             api.getViewbox = impl.getViewbox;
+            api.setViewbox = impl.setViewbox;
             api.centralize = impl.centralize;
             api.applyLayout = impl.applyLayout;
             api.serialize = impl.serialize;
@@ -220,6 +223,7 @@ export function createGraphApiInternal(
             api.getNodeStates = NOOP_ARRAY;
             api.getLinkStates = NOOP_ARRAY;
             api.getViewbox = () => ({ x: 0, y: 0, width: 0, height: 0, zoom: 1 });
+            api.setViewbox = NOOP;
             api.centralize = NOOP_PROMISE;
             api.applyLayout = NOOP_PROMISE;
             api.serialize = NOOP_SERIALIZE;
