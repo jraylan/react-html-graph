@@ -54,6 +54,7 @@ export interface GraphApiInternal extends GraphApi {
 export interface GraphApiBindings {
     addNode(node: NodeDefinition): void;
     removeNode(id: string): void;
+    updateNodeData(id: string, data: unknown): void;
     addLink(link: LinkDefinition): void;
     removeLink(id: string): void;
     connect(connection: PortConnection): void;
@@ -126,6 +127,7 @@ export function createGraphApiInternal(
         // Métodos de manipulação — no-ops até _bind
         addNode: NOOP,
         removeNode: NOOP,
+        updateNodeData: NOOP,
         addLink: NOOP,
         removeLink: NOOP,
         connect: NOOP,
@@ -161,6 +163,7 @@ export function createGraphApiInternal(
         _bind(impl: GraphApiBindings) {
             api.addNode = impl.addNode;
             api.removeNode = impl.removeNode;
+            api.updateNodeData = impl.updateNodeData;
             api.addLink = impl.addLink;
             api.removeLink = impl.removeLink;
             api.connect = impl.connect;
@@ -196,6 +199,7 @@ export function createGraphApiInternal(
             api._connected = false;
             api.addNode = NOOP;
             api.removeNode = NOOP;
+            api.updateNodeData = NOOP;
             api.addLink = NOOP;
             api.removeLink = NOOP;
             api.connect = NOOP;

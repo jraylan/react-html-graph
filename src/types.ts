@@ -97,6 +97,8 @@ export interface ErrorContextProps {
 export interface GraphApi {
     addNode(node: NodeDefinition): void;
     removeNode(id: string): void;
+    /** Atualiza os dados (``data``) de um nó existente sem recriá-lo. */
+    updateNodeData(id: string, data: unknown): void;
     addLink(link: LinkDefinition): void;
     removeLink(id: string): void;
     connect(connection: PortConnection): void;
@@ -181,6 +183,11 @@ export type GraphProps = {
     onError?: (error: GraphError) => void;
     /** Instância da API criada por useGraphApi. */
     api: GraphApi;
+    /**
+     * Botão do mouse que ativa o pan do canvas. Padrão: 1 (botão
+     * do meio). Use 0 para permitir pan com o botão esquerdo.
+     */
+    panButton?: number;
 }
 
 /** Entrada pública para aplicar um layout aos nós existentes do grafo. */

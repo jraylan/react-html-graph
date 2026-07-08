@@ -232,7 +232,7 @@ function getSnapshotBounds(nodes: GraphLayoutNode[]) {
  * @param props Propriedades do componente Graph
  * @returns JSX.Element
  */
-export default function Graph({ api, mode = "edit", onError }: GraphProps) {
+export default function Graph({ api, mode = "edit", onError, panButton = 1 }: GraphProps) {
     const rootRef = useRef<HTMLElement>(null)
     const internal = api as GraphApiInternal;
     const [mathProvider, setMathProvider] = useState<MathProvider>(() => internal.getMathProvider());
@@ -342,19 +342,23 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
     }, [onError]);
 
     const handleMouseDown = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
-        if (ev.button !== 1 || !rootRef.current) return;
+        // Pan só quando o alvo é o próprio canvas (com o botão
+        // esquerdo, um mousedown sobre um nó deve arrastar o nó,
+        // não deslocar a viewport).
+        if (ev.button !== panButton || !rootRef.current) return;
+        if (panButton === 0 && ev.target !== ev.currentTarget) return;
         panRef.current.panning = true
         rootRef.current.style.userSelect = 'none'
 
-    }, []);
+    }, [panButton]);
     const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        if (panRef.current.panning && rootRef.current && e.button === 1) {
+        if (panRef.current.panning && rootRef.current && e.button === panButton) {
             panRef.current.panning = false
             rootRef.current.style.userSelect = ""
             // Commita a posição acumulada no ref para o React state
             setViewBox(viewboxRef.current);
         }
-    }, [setViewBox]);
+    }, [setViewBox, panButton]);
 
     const handleWheel = useCallback((e: WheelEvent) => {
         e.preventDefault();
@@ -744,6 +748,7 @@ function GraphHandle({
     const implRef = useRef<GraphApiBindings>({
         addNode: () => { },
         removeNode: () => { },
+        updateNodeData: () => { },
         addLink: () => { },
         removeLink: () => { },
         connect: () => { },
@@ -766,6 +771,13 @@ function GraphHandle({
         },
         removeNode: (id: string) => {
             const next = nodeDefsRef.current.filter(n => n.id !== id);
+            nodeDefsRef.current = next;
+            setNodeDefs(next);
+        },
+        updateNodeData: (id: string, data: unknown) => {
+            const next = nodeDefsRef.current.map(n =>
+                n.id === id ? { ...n, data } : n
+            );
             nodeDefsRef.current = next;
             setNodeDefs(next);
         },
@@ -796,6 +808,7 @@ function GraphHandle({
         internal._bind({
             addNode: (...args) => implRef.current.addNode(...args),
             removeNode: (...args) => implRef.current.removeNode(...args),
+            updateNodeData: (...args) => implRef.current.updateNodeData(...args),
             addLink: (...args) => implRef.current.addLink(...args),
             removeLink: (...args) => implRef.current.removeLink(...args),
             connect: (...args) => implRef.current.connect(...args),
