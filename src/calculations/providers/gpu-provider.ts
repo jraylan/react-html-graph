@@ -1,4 +1,21 @@
-import { GPU, type GPUInstance } from "../../vendor/gpu";
+import type { GPUInstance } from "../../vendor/gpu";
+
+// O vendor gpu.js é um bundle CJS (usa ``require``), hostil ao
+// ESM: importá-lo estaticamente quebra consumidores Vite/ESM que
+// só usam o WebWorkerProvider. Carregamos sob demanda no primeiro
+// cálculo GPU.
+let GPU: any = null;
+let gpuCarregando: Promise<void> | null = null;
+
+async function ensureGPU(): Promise<void> {
+    if (GPU) return;
+    if (!gpuCarregando) {
+        gpuCarregando = import("../../vendor/gpu").then((mod) => {
+            GPU = (mod as any).GPU;
+        });
+    }
+    await gpuCarregando;
+}
 import {
     cubicBezier,
     cubicCurveToPath,
@@ -518,6 +535,7 @@ export class GPUProvider implements MathProvider {
             return this.ensureWorkerFallbackProvider().calculatePath(input);
         }
 
+        await ensureGPU();
         const curve = resolveFixedTangentCurve(input);
         const samples = this.sampleCurve(
             curve.p0x,
@@ -543,6 +561,7 @@ export class GPUProvider implements MathProvider {
             return this.ensureWorkerFallbackProvider().calculateBidirectionalPath(input);
         }
 
+        await ensureGPU();
         const curve = resolveFixedTangentCurve(input);
         const samples = this.sampleCurve(
             curve.p0x,

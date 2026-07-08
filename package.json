@@ -30,7 +30,8 @@
     "build:demo": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "prepare": "npm run build"
   },
   "peerDependencies": {
     "react": "^19.0.0",

@@ -97,17 +97,34 @@ export interface ErrorContextProps {
 export interface GraphApi {
     addNode(node: NodeDefinition): void;
     removeNode(id: string): void;
+    /** Atualiza os dados (``data``) de um nó existente sem recriá-lo. */
+    updateNodeData(id: string, data: unknown): void;
     addLink(link: LinkDefinition): void;
     removeLink(id: string): void;
     connect(connection: PortConnection): void;
     disconnect(connection: PortConnection): void;
     getConnections(): PortConnection[];
+    /**
+     * Inicia um arraste de conexão a partir de uma porta, como se
+     * o usuário a tivesse pressionado. Útil para "pegar" uma
+     * conexão existente e re-soltar em outra porta.
+     */
+    startPortDrag(
+        nodeId: string,
+        portID: string,
+        connectionType: string,
+        cursorPosition: { x: number; y: number },
+    ): void;
     /** Retorna o estado runtime atual reportado pelos nós. */
     getNodeStates(): GraphNodeRuntimeState[];
     /** Retorna o estado runtime atual reportado pelos links. */
     getLinkStates(): GraphLinkRuntimeState[];
     /** Centraliza a viewport para enquadrar todos os nós visíveis. */
     centralize(options?: GraphCentralizeOptions): Promise<Viewbox>;
+    /** Retorna o viewbox atual (posição no mundo, tamanho e zoom). */
+    getViewbox(): Viewbox;
+    /** Atualiza o viewbox (mescla os campos informados). */
+    setViewbox(viewbox: Partial<Viewbox>): void;
     /** Aplica um algoritmo de layout aos nós do grafo. */
     applyLayout(input: GraphApplyLayoutInput): Promise<GraphLayoutResult>;
     /** Serializa o snapshot atual de nós e links do grafo. */
@@ -181,6 +198,16 @@ export type GraphProps = {
     onError?: (error: GraphError) => void;
     /** Instância da API criada por useGraphApi. */
     api: GraphApi;
+    /**
+     * Botão do mouse que ativa o pan do canvas. Padrão: 1 (botão
+     * do meio). Use 0 para permitir pan com o botão esquerdo.
+     */
+    panButton?: number;
+    /**
+     * Tamanho da grade (em unidades de mundo) para alinhar a
+     * posição dos nós ao soltar. 0/undefined desativa.
+     */
+    snapGrid?: number;
 }
 
 /** Entrada pública para aplicar um layout aos nós existentes do grafo. */
@@ -425,6 +452,8 @@ export interface GraphObjectProps<T extends object = any> {
     data?: T;
     /** Callback chamado quando o nó é movido. */
     onMove?: (newPosition: Point3D) => void;
+    /** Grade de alinhamento (unidades de mundo); 0 desativa. */
+    snapGrid?: number;
     /** Callback chamado quando o nó reporta seu estado runtime atual. */
     onStateChange?: (state: GraphNodeRuntimeState<T>) => void;
     /** Função que renderiza o conteúdo do nó com as portas. */

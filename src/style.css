@@ -19,8 +19,10 @@ graph-root {
             position: absolute;
             width: fit-content;
             height: fit-content;
-            display: flex;
-            align-items: center;
+            /* block (não flex): o conteúdo do nó dimensiona pela
+               largura natural sem o encolhimento de flex-item, que
+               cortava títulos largos. */
+            display: block;
         }
     }
 }
@@ -28,10 +30,19 @@ graph-root {
 
 
 
-node-graph-link,
 node-graph-node {
     position: absolute;
     pointer-events: all;
+}
+
+/* O box do link (dimensionado às bounds do path) engloba as
+   portas das extremidades; com pointer-events:all ele cobriria e
+   bloquearia o hit das portas. O path/SVG interno permanece
+   desenhado; interação de link, se necessária, deve ser feita no
+   próprio elemento do path. */
+node-graph-link {
+    position: absolute;
+    pointer-events: none;
 }
 
 node-graph-temp-link {

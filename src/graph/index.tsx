@@ -232,7 +232,7 @@ function getSnapshotBounds(nodes: GraphLayoutNode[]) {
  * @param props Propriedades do componente Graph
  * @returns JSX.Element
  */
-export default function Graph({ api, mode = "edit", onError }: GraphProps) {
+export default function Graph({ api, mode = "edit", onError, panButton = 1, snapGrid }: GraphProps) {
     const rootRef = useRef<HTMLElement>(null)
     const internal = api as GraphApiInternal;
     const [mathProvider, setMathProvider] = useState<MathProvider>(() => internal.getMathProvider());
@@ -297,12 +297,13 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
                     initialPosition={def.position}
                     onMove={(newPosition) => handleNodeMove(def.id, newPosition)}
                     onStateChange={handleNodeStateChange}
+                    snapGrid={snapGrid}
                 >
                     {template}
                 </GraphObject>
             );
         }),
-        [getZoom, handleNodeMove, handleNodeStateChange, mode, nodeDefs, internal._nodeTypeRegistry, internal._defaultNodeTemplate]
+        [getZoom, handleNodeMove, handleNodeStateChange, mode, nodeDefs, snapGrid, internal._nodeTypeRegistry, internal._defaultNodeTemplate]
     );
 
     // Resolve template do registro por connectionType
@@ -342,19 +343,31 @@ export default function Graph({ api, mode = "edit", onError }: GraphProps) {
     }, [onError]);
 
     const handleMouseDown = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
-        if (ev.button !== 1 || !rootRef.current) return;
+        // Pan ao arrastar o fundo do canvas. Com o botão esquerdo,
+        // um mousedown sobre um nó/porta deve arrastar/conectar,
+        // não deslocar a viewport — então ignoramos esses alvos.
+        if (ev.button !== panButton || !rootRef.current) return;
+        if (panButton === 0) {
+            const alvo = ev.target as HTMLElement;
+            if (
+                alvo.closest &&
+                alvo.closest("node-graph-object, node-graph-port")
+            ) {
+                return;
+            }
+        }
         panRef.current.panning = true
         rootRef.current.style.userSelect = 'none'
 
-    }, []);
+    }, [panButton]);
     const handleMouseUp = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        if (panRef.current.panning && rootRef.current && e.button === 1) {
+        if (panRef.current.panning && rootRef.current && e.button === panButton) {
             panRef.current.panning = false
             rootRef.current.style.userSelect = ""
             // Commita a posição acumulada no ref para o React state
             setViewBox(viewboxRef.current);
         }
-    }, [setViewBox]);
+    }, [setViewBox, panButton]);
 
     const handleWheel = useCallback((e: WheelEvent) => {
         e.preventDefault();
@@ -564,7 +577,7 @@ function GraphHandle({
     setNodeDefs: React.Dispatch<React.SetStateAction<NodeDefinition[]>>;
     setLinkDefs: React.Dispatch<React.SetStateAction<LinkDefinition[]>>;
 }) {
-    const { connect, disconnect, connections } = useContext(ConnectionContext);
+    const { connect, disconnect, connections, startDrag } = useContext(ConnectionContext);
     const nodeDefsRef = useRef(nodeDefs);
     const linkDefsRef = useRef(linkDefs);
 
@@ -744,13 +757,17 @@ function GraphHandle({
     const implRef = useRef<GraphApiBindings>({
         addNode: () => { },
         removeNode: () => { },
+        updateNodeData: () => { },
         addLink: () => { },
         removeLink: () => { },
         connect: () => { },
         disconnect: () => { },
+        startPortDrag: () => { },
         getConnections: () => [],
         getNodeStates: () => [],
         getLinkStates: () => [],
+        getViewbox: () => viewboxRef.current,
+        setViewbox: () => { },
         centralize: () => Promise.resolve({} as Viewbox),
         applyLayout: () => Promise.resolve({} as GraphLayoutResult),
         serialize: () => ({ nodes: [], links: [] }),
@@ -769,6 +786,13 @@ function GraphHandle({
             nodeDefsRef.current = next;
             setNodeDefs(next);
         },
+        updateNodeData: (id: string, data: unknown) => {
+            const next = nodeDefsRef.current.map(n =>
+                n.id === id ? { ...n, data } : n
+            );
+            nodeDefsRef.current = next;
+            setNodeDefs(next);
+        },
         addLink: (link: LinkDefinition) => {
             const next = [...linkDefsRef.current, link];
             linkDefsRef.current = next;
@@ -781,9 +805,14 @@ function GraphHandle({
         },
         connect,
         disconnect,
+        startPortDrag: (nodeId, portID, connectionType, cursorPosition) =>
+            startDrag(nodeId, portID, connectionType, cursorPosition),
         getConnections: () => connections,
         getNodeStates: () => Array.from(nodeStateRef.current.values()),
         getLinkStates: () => Array.from(linkStateRef.current.values()),
+        getViewbox: () => viewboxRef.current,
+        setViewbox: (partial: Partial<Viewbox>) =>
+            setViewBox(vb => ({ ...vb, ...partial })),
         centralize,
         applyLayout,
         serialize,
@@ -796,13 +825,17 @@ function GraphHandle({
         internal._bind({
             addNode: (...args) => implRef.current.addNode(...args),
             removeNode: (...args) => implRef.current.removeNode(...args),
+            updateNodeData: (...args) => implRef.current.updateNodeData(...args),
             addLink: (...args) => implRef.current.addLink(...args),
             removeLink: (...args) => implRef.current.removeLink(...args),
             connect: (...args) => implRef.current.connect(...args),
             disconnect: (...args) => implRef.current.disconnect(...args),
+            startPortDrag: (...args) => implRef.current.startPortDrag(...args),
             getConnections: () => implRef.current.getConnections(),
             getNodeStates: () => implRef.current.getNodeStates(),
             getLinkStates: () => implRef.current.getLinkStates(),
+            getViewbox: () => implRef.current.getViewbox(),
+            setViewbox: (...args) => implRef.current.setViewbox(...args),
             centralize: (...args) => implRef.current.centralize(...args),
             applyLayout: (...args) => implRef.current.applyLayout(...args),
             serialize: () => implRef.current.serialize(),

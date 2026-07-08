@@ -2,8 +2,11 @@ import { GraphLinkAnchor, GraphLinkEndpointState, GraphNodeRuntimeState, GraphPo
 
 export const ZERO_VECTOR: Vector2 = { x: 0, y: 0 };
 
-/** Converte aliases laterais ou vetores arbitrários em um vetor normalizado. */
-export function normalizePortVector(location: GraphPortLocation): Vector2 {
+const clamp = (v: number, min: number, max: number) =>
+    Math.min(max, Math.max(min, v));
+
+/** Converte aliases laterais em um vetor (não-normalizado). */
+export function portVector(location: GraphPortLocation): Vector2 {
     if (typeof location === "string") {
         switch (location) {
             case "left": return { x: -1, y: 0 };
@@ -13,14 +16,15 @@ export function normalizePortVector(location: GraphPortLocation): Vector2 {
             default: return ZERO_VECTOR;
         }
     }
+    return { x: location.x, y: location.y };
+}
 
-    const magnitude = Math.hypot(location.x, location.y);
+/** Converte aliases laterais ou vetores arbitrários em um vetor normalizado. */
+export function normalizePortVector(location: GraphPortLocation): Vector2 {
+    const raw = portVector(location);
+    const magnitude = Math.hypot(raw.x, raw.y);
     if (magnitude === 0) return ZERO_VECTOR;
-
-    return {
-        x: location.x / magnitude,
-        y: location.y / magnitude,
-    };
+    return { x: raw.x / magnitude, y: raw.y / magnitude };
 }
 
 /** Resolve a âncora global de uma porta a partir do estado runtime do nó. */
@@ -30,13 +34,21 @@ export function buildLinkAnchor(
 ): GraphLinkAnchor | null {
     if (!nodeState || !location) return null;
 
+    // Posição: cada componente do vetor cru (clampeado em [-1, 1])
+    // escala a meia-dimensão, então uma porta ``{x:1, y:0.6}`` cai
+    // na borda direita e distribuída no eixo Y — sem a normalização
+    // puxá-la para dentro. A direção ``d`` (tangente da curva)
+    // permanece normalizada.
+    const raw = portVector(location);
+    const px = clamp(raw.x, -1, 1);
+    const py = clamp(raw.y, -1, 1);
     const d = normalizePortVector(location);
     const centerX = nodeState.position.x + nodeState.width / 2;
     const centerY = nodeState.position.y + nodeState.height / 2;
 
     return {
-        x: centerX + d.x * (nodeState.width / 2),
-        y: centerY + d.y * (nodeState.height / 2),
+        x: centerX + px * (nodeState.width / 2),
+        y: centerY + py * (nodeState.height / 2),
         z: nodeState.position.z,
         d,
     };
