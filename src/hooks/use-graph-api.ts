@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { WebWorkerProvider } from "../calculations";
+import { WebWorkerProvider } from "../calculations/providers/webworker-provider";
 import type { MathProvider } from "../calculations/types";
 import type {
     GraphApi,
