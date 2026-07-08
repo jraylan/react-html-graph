@@ -59,6 +59,12 @@ export interface GraphApiBindings {
     removeLink(id: string): void;
     connect(connection: PortConnection): void;
     disconnect(connection: PortConnection): void;
+    startPortDrag(
+        nodeId: string,
+        portID: string,
+        connectionType: string,
+        cursorPosition: { x: number; y: number },
+    ): void;
     getConnections(): PortConnection[];
     getNodeStates(): GraphNodeRuntimeState[];
     getLinkStates(): GraphLinkRuntimeState[];
@@ -133,6 +139,7 @@ export function createGraphApiInternal(
         removeLink: NOOP,
         connect: NOOP,
         disconnect: NOOP,
+        startPortDrag: NOOP,
         getConnections: NOOP_ARRAY,
         getNodeStates: NOOP_ARRAY,
         getLinkStates: NOOP_ARRAY,
@@ -170,6 +177,7 @@ export function createGraphApiInternal(
             api.removeLink = impl.removeLink;
             api.connect = impl.connect;
             api.disconnect = impl.disconnect;
+            api.startPortDrag = impl.startPortDrag;
             api.getConnections = impl.getConnections;
             api.getNodeStates = impl.getNodeStates;
             api.getLinkStates = impl.getLinkStates;
@@ -207,6 +215,7 @@ export function createGraphApiInternal(
             api.removeLink = NOOP;
             api.connect = NOOP;
             api.disconnect = NOOP;
+            api.startPortDrag = NOOP;
             api.getConnections = NOOP_ARRAY;
             api.getNodeStates = NOOP_ARRAY;
             api.getLinkStates = NOOP_ARRAY;

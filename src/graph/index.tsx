@@ -576,7 +576,7 @@ function GraphHandle({
     setNodeDefs: React.Dispatch<React.SetStateAction<NodeDefinition[]>>;
     setLinkDefs: React.Dispatch<React.SetStateAction<LinkDefinition[]>>;
 }) {
-    const { connect, disconnect, connections } = useContext(ConnectionContext);
+    const { connect, disconnect, connections, startDrag } = useContext(ConnectionContext);
     const nodeDefsRef = useRef(nodeDefs);
     const linkDefsRef = useRef(linkDefs);
 
@@ -761,6 +761,7 @@ function GraphHandle({
         removeLink: () => { },
         connect: () => { },
         disconnect: () => { },
+        startPortDrag: () => { },
         getConnections: () => [],
         getNodeStates: () => [],
         getLinkStates: () => [],
@@ -802,6 +803,8 @@ function GraphHandle({
         },
         connect,
         disconnect,
+        startPortDrag: (nodeId, portID, connectionType, cursorPosition) =>
+            startDrag(nodeId, portID, connectionType, cursorPosition),
         getConnections: () => connections,
         getNodeStates: () => Array.from(nodeStateRef.current.values()),
         getLinkStates: () => Array.from(linkStateRef.current.values()),
@@ -823,6 +826,7 @@ function GraphHandle({
             removeLink: (...args) => implRef.current.removeLink(...args),
             connect: (...args) => implRef.current.connect(...args),
             disconnect: (...args) => implRef.current.disconnect(...args),
+            startPortDrag: (...args) => implRef.current.startPortDrag(...args),
             getConnections: () => implRef.current.getConnections(),
             getNodeStates: () => implRef.current.getNodeStates(),
             getLinkStates: () => implRef.current.getLinkStates(),

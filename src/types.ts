@@ -104,6 +104,17 @@ export interface GraphApi {
     connect(connection: PortConnection): void;
     disconnect(connection: PortConnection): void;
     getConnections(): PortConnection[];
+    /**
+     * Inicia um arraste de conexão a partir de uma porta, como se
+     * o usuário a tivesse pressionado. Útil para "pegar" uma
+     * conexão existente e re-soltar em outra porta.
+     */
+    startPortDrag(
+        nodeId: string,
+        portID: string,
+        connectionType: string,
+        cursorPosition: { x: number; y: number },
+    ): void;
     /** Retorna o estado runtime atual reportado pelos nós. */
     getNodeStates(): GraphNodeRuntimeState[];
     /** Retorna o estado runtime atual reportado pelos links. */
