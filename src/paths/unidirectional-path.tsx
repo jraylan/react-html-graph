@@ -205,7 +205,9 @@ export default function UnidirectionalPath({
     cycleLenRef.current = cycleLen;
 
     const animateFunction = useCallback((dt: number) => {
-        dashOffset.current += (dt * 1 / animationDuration) * cycleLenRef.current;
+        // Decrementa para os traços fluírem de ``from`` para ``to``
+        // (sentido do fluxo: origem -> destino).
+        dashOffset.current -= (dt * 1 / animationDuration) * cycleLenRef.current;
         pRef.current?.style.setProperty("stroke-dashoffset", dashOffset.current.toString());
     }, [animationDuration])
 
