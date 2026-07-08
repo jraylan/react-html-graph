@@ -99,6 +99,11 @@ export interface GraphApi {
     removeNode(id: string): void;
     /** Atualiza os dados (``data``) de um nó existente sem recriá-lo. */
     updateNodeData(id: string, data: unknown): void;
+    /**
+     * Define as portas específicas de um nó (portas dinâmicas). Uma
+     * lista vazia volta a usar as portas do tipo.
+     */
+    setNodePorts(id: string, ports: PortDefinition[]): void;
     addLink(link: LinkDefinition): void;
     removeLink(id: string): void;
     connect(connection: PortConnection): void;
@@ -673,6 +678,12 @@ export interface NodeDefinition<T = any> {
     nodeType: string;
     data?: T;
     position: Point3D;
+    /**
+     * Portas específicas desta instância; quando presentes,
+     * substituem as portas do tipo (nós com portas dinâmicas, como
+     * um switch com uma saída por caso). Não são serializadas.
+     */
+    ports?: PortDefinition[];
 }
 
 /** Definição de um tipo de nó (portas e template). */

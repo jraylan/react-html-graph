@@ -283,7 +283,10 @@ export default function Graph({ api, mode = "edit", onError, panButton = 1, snap
         nodeDefs.map(def => {
             const nodeType = internal._nodeTypeRegistry.get(def.nodeType);
             const template = nodeType?.template ?? internal._defaultNodeTemplate;
-            const ports = nodeType?.ports ?? [];
+            const ports =
+                def.ports && def.ports.length > 0
+                    ? def.ports
+                    : nodeType?.ports ?? [];
 
             if (!template) return null;
 
@@ -763,6 +766,7 @@ function GraphHandle({
         addNode: () => { },
         removeNode: () => { },
         updateNodeData: () => { },
+        setNodePorts: () => { },
         addLink: () => { },
         removeLink: () => { },
         connect: () => { },
@@ -794,6 +798,13 @@ function GraphHandle({
         updateNodeData: (id: string, data: unknown) => {
             const next = nodeDefsRef.current.map(n =>
                 n.id === id ? { ...n, data } : n
+            );
+            nodeDefsRef.current = next;
+            setNodeDefs(next);
+        },
+        setNodePorts: (id: string, ports: NodeDefinition["ports"]) => {
+            const next = nodeDefsRef.current.map(n =>
+                n.id === id ? { ...n, ports } : n
             );
             nodeDefsRef.current = next;
             setNodeDefs(next);
@@ -831,6 +842,7 @@ function GraphHandle({
             addNode: (...args) => implRef.current.addNode(...args),
             removeNode: (...args) => implRef.current.removeNode(...args),
             updateNodeData: (...args) => implRef.current.updateNodeData(...args),
+            setNodePorts: (...args) => implRef.current.setNodePorts(...args),
             addLink: (...args) => implRef.current.addLink(...args),
             removeLink: (...args) => implRef.current.removeLink(...args),
             connect: (...args) => implRef.current.connect(...args),
