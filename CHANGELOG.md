@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.1.1...react-html-graph-v2.2.0) (2026-07-08)
+
+
+### Features
+
+* **graph:** arraste de grupo e reserva do shift para seleção de área ([aac8b40](https://github.com/jraylan/react-html-graph/commit/aac8b409303f40d5cc209c7e1ad39ed37ffbcfac))
+
 ## [2.1.1](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.1.0...react-html-graph-v2.1.1) (2026-07-08)
 
 
