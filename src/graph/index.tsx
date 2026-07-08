@@ -342,11 +342,19 @@ export default function Graph({ api, mode = "edit", onError, panButton = 1 }: Gr
     }, [onError]);
 
     const handleMouseDown = useCallback((ev: React.MouseEvent<HTMLDivElement>) => {
-        // Pan só quando o alvo é o próprio canvas (com o botão
-        // esquerdo, um mousedown sobre um nó deve arrastar o nó,
-        // não deslocar a viewport).
+        // Pan ao arrastar o fundo do canvas. Com o botão esquerdo,
+        // um mousedown sobre um nó/porta deve arrastar/conectar,
+        // não deslocar a viewport — então ignoramos esses alvos.
         if (ev.button !== panButton || !rootRef.current) return;
-        if (panButton === 0 && ev.target !== ev.currentTarget) return;
+        if (panButton === 0) {
+            const alvo = ev.target as HTMLElement;
+            if (
+                alvo.closest &&
+                alvo.closest("node-graph-object, node-graph-port")
+            ) {
+                return;
+            }
+        }
         panRef.current.panning = true
         rootRef.current.style.userSelect = 'none'
 
