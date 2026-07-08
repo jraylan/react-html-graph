@@ -19,8 +19,10 @@ graph-root {
             position: absolute;
             width: fit-content;
             height: fit-content;
-            display: flex;
-            align-items: center;
+            /* block (não flex): o conteúdo do nó dimensiona pela
+               largura natural sem o encolhimento de flex-item, que
+               cortava títulos largos. */
+            display: block;
         }
     }
 }
