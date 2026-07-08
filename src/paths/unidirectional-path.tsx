@@ -27,6 +27,9 @@ function aplicarBounds(
     root.style.top = top + "px";
     root.style.width = width + "px";
     root.style.height = height + "px";
+    // O box do link engloba as portas das extremidades; sem isto
+    // ele bloquearia o clique/hit dos nós e das portas embaixo.
+    root.style.pointerEvents = "none";
     svg.setAttribute("viewBox", `${left} ${top} ${width} ${height}`);
 }
 
