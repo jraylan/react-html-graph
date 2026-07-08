@@ -19,6 +19,8 @@ export interface UseMoveBehaviourOptions {
     position: Point3D;
     /** Callback chamado ao finalizar o movimento. */
     onMoveEnd?: (newPosition: Point3D) => void;
+    /** Grade de alinhamento (unidades de mundo); 0 desativa. */
+    snapGrid?: number;
     /** Callback chamado durante o arraste para reportar estado transitório. */
     onMoving?: (currentPosition: Point3D) => void;
     /** Emitter de eventos do nó. */
@@ -48,6 +50,7 @@ export function useMoveBehaviour({
     onMoveEnd,
     onMoving,
     eventEmitter,
+    snapGrid,
 }: UseMoveBehaviourOptions): UseMoveBehaviourReturn {
     const moveRef = useRef<MoveState>({
         moving: false,
@@ -67,15 +70,23 @@ export function useMoveBehaviour({
     const handleMouseUp = useCallback((e: MouseEvent | React.MouseEvent) => {
         if (e.button === 0 && moveRef.current.moving) {
             moveRef.current.moving = false;
+            const snap = (v: number) =>
+                snapGrid && snapGrid > 0
+                    ? Math.round(v / snapGrid) * snapGrid
+                    : v;
             const nextPosition: Point3D = {
-                x: moveRef.current.currentPos.x,
-                y: moveRef.current.currentPos.y,
+                x: snap(moveRef.current.currentPos.x),
+                y: snap(moveRef.current.currentPos.y),
                 z: position.z,
+            };
+            moveRef.current.currentPos = {
+                x: nextPosition.x,
+                y: nextPosition.y,
             };
             onMoveEnd?.(nextPosition);
             eventEmitter?.("move", { position: nextPosition, phase: "commit" });
         }
-    }, [position.z, onMoveEnd, eventEmitter]);
+    }, [position.z, onMoveEnd, eventEmitter, snapGrid]);
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!elementRef.current || !moveRef.current.moving) return;

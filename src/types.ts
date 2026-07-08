@@ -201,6 +201,11 @@ export type GraphProps = {
      * do meio). Use 0 para permitir pan com o botão esquerdo.
      */
     panButton?: number;
+    /**
+     * Tamanho da grade (em unidades de mundo) para alinhar a
+     * posição dos nós ao soltar. 0/undefined desativa.
+     */
+    snapGrid?: number;
 }
 
 /** Entrada pública para aplicar um layout aos nós existentes do grafo. */
@@ -445,6 +450,8 @@ export interface GraphObjectProps<T extends object = any> {
     data?: T;
     /** Callback chamado quando o nó é movido. */
     onMove?: (newPosition: Point3D) => void;
+    /** Grade de alinhamento (unidades de mundo); 0 desativa. */
+    snapGrid?: number;
     /** Callback chamado quando o nó reporta seu estado runtime atual. */
     onStateChange?: (state: GraphNodeRuntimeState<T>) => void;
     /** Função que renderiza o conteúdo do nó com as portas. */

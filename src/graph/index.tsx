@@ -232,7 +232,7 @@ function getSnapshotBounds(nodes: GraphLayoutNode[]) {
  * @param props Propriedades do componente Graph
  * @returns JSX.Element
  */
-export default function Graph({ api, mode = "edit", onError, panButton = 1 }: GraphProps) {
+export default function Graph({ api, mode = "edit", onError, panButton = 1, snapGrid }: GraphProps) {
     const rootRef = useRef<HTMLElement>(null)
     const internal = api as GraphApiInternal;
     const [mathProvider, setMathProvider] = useState<MathProvider>(() => internal.getMathProvider());
@@ -297,12 +297,13 @@ export default function Graph({ api, mode = "edit", onError, panButton = 1 }: Gr
                     initialPosition={def.position}
                     onMove={(newPosition) => handleNodeMove(def.id, newPosition)}
                     onStateChange={handleNodeStateChange}
+                    snapGrid={snapGrid}
                 >
                     {template}
                 </GraphObject>
             );
         }),
-        [getZoom, handleNodeMove, handleNodeStateChange, mode, nodeDefs, internal._nodeTypeRegistry, internal._defaultNodeTemplate]
+        [getZoom, handleNodeMove, handleNodeStateChange, mode, nodeDefs, snapGrid, internal._nodeTypeRegistry, internal._defaultNodeTemplate]
     );
 
     // Resolve template do registro por connectionType
