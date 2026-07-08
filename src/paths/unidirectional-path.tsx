@@ -7,6 +7,29 @@ import useGetZoom from "../hooks/get-zoom";
 
 const UNIDIRECTIONAL_PATH_STEPS = 5;
 
+// Padding mínimo (unidades de mundo) das bounds do SVG. Sem ele um
+// path perfeitamente horizontal/vertical tem largura ou altura 0,
+// zerando o SVG e sumindo com a linha.
+const BOUNDS_PAD = 8;
+
+type Bounds = { left: number; top: number; width: number; height: number };
+
+function aplicarBounds(
+    root: HTMLElement,
+    svg: SVGSVGElement,
+    bounds: Bounds,
+): void {
+    const left = bounds.left - BOUNDS_PAD;
+    const top = bounds.top - BOUNDS_PAD;
+    const width = bounds.width + BOUNDS_PAD * 2;
+    const height = bounds.height + BOUNDS_PAD * 2;
+    root.style.left = left + "px";
+    root.style.top = top + "px";
+    root.style.width = width + "px";
+    root.style.height = height + "px";
+    svg.setAttribute("viewBox", `${left} ${top} ${width} ${height}`);
+}
+
 type LivePathAnchors = {
     getFrom: () => GraphLinkAnchor | null;
     getTo: () => GraphLinkAnchor | null;
@@ -93,11 +116,7 @@ export default function UnidirectionalPath({
 
             const { bounds, pathD } = pathResult;
 
-            root.style.left = bounds.left + "px";
-            root.style.top = bounds.top + "px";
-            root.style.width = bounds.width + "px";
-            root.style.height = bounds.height + "px";
-            svg.setAttribute("viewBox", `${bounds.left} ${bounds.top} ${bounds.width} ${bounds.height}`);
+            aplicarBounds(root, svg, bounds);
             p.setAttribute("d", pathD);
 
             if (labelResult) {
@@ -134,12 +153,7 @@ export default function UnidirectionalPath({
             steps: UNIDIRECTIONAL_PATH_STEPS,
         });
 
-        root.style.left = result.bounds.left + "px";
-        root.style.top = result.bounds.top + "px";
-        root.style.width = result.bounds.width + "px";
-        root.style.height = result.bounds.height + "px";
-
-        svg.setAttribute("viewBox", `${result.bounds.left} ${result.bounds.top} ${result.bounds.width} ${result.bounds.height}`);
+        aplicarBounds(root, svg, result.bounds);
         p.setAttribute("d", result.pathD);
 
         const labelGroup = labelGroupRef.current;
