@@ -12,7 +12,7 @@
 
 ### Bug Fixes
 
-* gpu.js como devDependency (uso é só type import; evita puxar gl) ([eb2fb69](https://github.com/jraylan/react-html-graph/commit/eb2fb696a6d64f35543c81e3fd9589421c844030))
+* move gpu.js to devDependencies (only used as a type import; avoids pulling in gl) ([eb2fb69](https://github.com/jraylan/react-html-graph/commit/eb2fb696a6d64f35543c81e3fd9589421c844030))
 
 ## [2.1.0](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.0.0...react-html-graph-v2.1.0) (2026-07-08)
 
