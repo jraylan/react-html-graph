@@ -463,15 +463,11 @@ export interface GraphObjectProps<T extends object = any> {
     /** Callback chamado quando o nó reporta seu estado runtime atual. */
     onStateChange?: (state: GraphNodeRuntimeState<T>) => void;
     /**
-     * Reporta o delta incremental do arraste (unidades de mundo)
-     * para o Graph mover o grupo. Fases: start, live, commit.
+     * Dado o id do nó arrastado, retorna os ids do grupo que deve
+     * se mover junto (inclui o próprio). Grupo com um único membro =
+     * arraste normal. O nó arrastado reposiciona os demais.
      */
-    onMoveDelta?: (
-        id: string,
-        dx: number,
-        dy: number,
-        phase: "start" | "live" | "commit",
-    ) => void;
+    getMoveGroup?: (nodeId: string) => string[];
     /** Função que renderiza o conteúdo do nó com as portas. */
     children(props: NodeObjectTemplateProps<T>): React.ReactNode;
 }
@@ -803,6 +799,19 @@ export interface GraphMoveEvent {
 }
 
 /**
+ * Evento que pede a um nó que se mova para uma posição externa
+ * (arraste de grupo): o nó arrastado emite isto para cada membro
+ * do grupo, que então reposiciona a si mesmo (atualizando registry
+ * e paths). Fase live durante o arraste, commit ao soltar.
+ */
+export interface GraphExternalMoveEvent {
+    readonly type: "externalMove";
+    readonly nodeId: string;
+    readonly position: Point3D;
+    readonly phase?: "live" | "commit";
+}
+
+/**
  * Evento disparado quando uma conexão é criada ou removida.
  */
 export interface ConnectionChangeEvent {
@@ -840,6 +849,7 @@ export interface VisibilityChangeEvent {
 export type NodeEvent =
     | DataChangeEvent
     | GraphMoveEvent
+    | GraphExternalMoveEvent
     | ConnectionChangeEvent
     | GraphNodeSelectionChangeEvent
     | VisibilityChangeEvent
@@ -851,6 +861,7 @@ export type NodeEvent =
 export type NodeEventMap = {
     dataChange: DataChangeEvent;
     move: GraphMoveEvent;
+    externalMove: GraphExternalMoveEvent;
     connectionChange: ConnectionChangeEvent;
     select: GraphNodeSelectionChangeEvent;
     visibilityChange: VisibilityChangeEvent;

@@ -273,107 +273,6 @@ export default function Graph({ api, mode = "edit", onError, panButton = 1, snap
         });
     }, [nodeStateRef]);
 
-    // Estado do arraste de grupo: ao mover um nó selecionado, os
-    // demais membros seguem aplicando o mesmo delta (distancia
-    // relativa preservada), sem re-render durante o arraste.
-    const groupDragRef = useRef<{
-        draggedId: string;
-        members: string[];
-        starts: Map<string, { x: number; y: number }>;
-        draggedStart: { x: number; y: number };
-        acc: { x: number; y: number };
-    } | null>(null);
-
-    const handleNodeMoveDelta = useCallback((
-        id: string,
-        dx: number,
-        dy: number,
-        phase: "start" | "live" | "commit",
-    ) => {
-        if (!getMoveGroup) return;
-
-        if (phase === "start") {
-            const membros = getMoveGroup(id).filter((m) => m !== id);
-            if (membros.length === 0) {
-                groupDragRef.current = null;
-                return;
-            }
-            const starts = new Map<string, { x: number; y: number }>();
-            for (const m of membros) {
-                const st = nodeStateRef.current.get(m);
-                if (st) starts.set(m, { x: st.position.x, y: st.position.y });
-            }
-            const dragged = nodeStateRef.current.get(id);
-            groupDragRef.current = {
-                draggedId: id,
-                members: membros,
-                starts,
-                draggedStart: dragged
-                    ? { x: dragged.position.x, y: dragged.position.y }
-                    : { x: 0, y: 0 },
-                acc: { x: 0, y: 0 },
-            };
-            return;
-        }
-
-        const grp = groupDragRef.current;
-        if (!grp || grp.draggedId !== id) return;
-        const root = rootRef.current;
-
-        if (phase === "live") {
-            grp.acc.x += dx;
-            grp.acc.y += dy;
-            if (!root) return;
-            for (const m of grp.members) {
-                const start = grp.starts.get(m);
-                if (!start) continue;
-                const el = root.querySelector(
-                    `node-graph-object[node-id="${m}"]`,
-                ) as HTMLElement | null;
-                if (el) {
-                    el.style.left = `${(start.x + grp.acc.x).toFixed(0)}px`;
-                    el.style.top = `${(start.y + grp.acc.y).toFixed(0)}px`;
-                }
-            }
-            return;
-        }
-
-        // commit: usa o delta final do nó arrastado (ja com snap)
-        // para reposicionar os membros no state e no ref.
-        const dragged = nodeStateRef.current.get(id);
-        const totalX = dragged
-            ? dragged.position.x - grp.draggedStart.x
-            : grp.acc.x;
-        const totalY = dragged
-            ? dragged.position.y - grp.draggedStart.y
-            : grp.acc.y;
-        const novos = new Map<string, Point3D>();
-        for (const m of grp.members) {
-            const start = grp.starts.get(m);
-            if (!start) continue;
-            const st = nodeStateRef.current.get(m);
-            const pos: Point3D = {
-                x: start.x + totalX,
-                y: start.y + totalY,
-                z: st?.position.z ?? 0,
-            };
-            nodeStateRef.current.set(m, {
-                id: m,
-                position: pos,
-                width: st?.width ?? 1,
-                height: st?.height ?? 1,
-                data: st?.data,
-            });
-            novos.set(m, pos);
-        }
-        groupDragRef.current = null;
-        setNodeDefs((prev) =>
-            prev.map((def) => {
-                const np = novos.get(def.id);
-                return np ? { ...def, position: np } : def;
-            }),
-        );
-    }, [getMoveGroup]);
 
     const getZoom = useCallback(() => {
         return viewboxRef.current.zoom;
@@ -399,14 +298,14 @@ export default function Graph({ api, mode = "edit", onError, panButton = 1, snap
                     initialPosition={def.position}
                     onMove={(newPosition) => handleNodeMove(def.id, newPosition)}
                     onStateChange={handleNodeStateChange}
-                    onMoveDelta={getMoveGroup ? handleNodeMoveDelta : undefined}
+                    getMoveGroup={getMoveGroup}
                     snapGrid={snapGrid}
                 >
                     {template}
                 </GraphObject>
             );
         }),
-        [getZoom, handleNodeMove, handleNodeMoveDelta, handleNodeStateChange, mode, nodeDefs, snapGrid, getMoveGroup, internal._nodeTypeRegistry, internal._defaultNodeTemplate]
+        [getZoom, handleNodeMove, handleNodeStateChange, mode, nodeDefs, snapGrid, getMoveGroup, internal._nodeTypeRegistry, internal._defaultNodeTemplate]
     );
 
     // Resolve template do registro por connectionType

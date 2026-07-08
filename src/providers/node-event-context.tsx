@@ -2,6 +2,7 @@ import { memo, useCallback, useRef, useEffect } from "react";
 import type {
     ConnectionChangeEvent,
     DataChangeEvent,
+    GraphExternalMoveEvent,
     GraphMoveEvent,
     GraphNodeSelectionChangeEvent,
     NodeEventCallback,
@@ -41,6 +42,17 @@ const EVENT_CLASS_MAP: { [K in keyof NodeEventMap]: new (nodeId: string, payload
             this.position = createReadonlyProxy(payload.position);
         }
 
+    },
+    externalMove: class GraphExternalMoveEventImpl implements GraphExternalMoveEvent {
+        readonly type = "externalMove";
+        readonly nodeId: string
+        readonly position: { x: number, y: number, z: number }
+        readonly phase?: "live" | "commit";
+        constructor(nodeId: string, payload: Omit<GraphExternalMoveEvent, "type" | "nodeId">) {
+            this.nodeId = nodeId;
+            this.position = createReadonlyProxy(payload.position);
+            this.phase = payload.phase;
+        }
     },
     connectionChange: class ConnectionChangeEventImpl implements ConnectionChangeEvent {
         readonly type = "connectionChange";

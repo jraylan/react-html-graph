@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect, useMemo, memo } from "react";
-import { GraphNodeRuntimeState, GraphObjectProps, NodeEventEmitter, Point3D, PortsByLocation } from "../types";
+import { GraphExternalMoveEvent, GraphNodeRuntimeState, GraphObjectProps, NodeEventEmitter, Point3D, PortsByLocation } from "../types";
 import GraphPort from "../ports/base";
 import { NodeEventProvider } from "../providers/node-event-context";
 import { useMoveBehaviour } from "../behaviour/move-behaviour";
@@ -26,7 +26,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     onMove,
     onStateChange,
     snapGrid,
-    onMoveDelta,
+    getMoveGroup,
 }: GraphObjectProps<T>) {
     const ref = useRef<HTMLDivElement>(null);
     const root = useGraphRoot();
@@ -64,11 +64,98 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
         setEmitter(() => emitFn);
     }, []);
 
+    // Última posição consolidada do nó (com snap). Usada como
+    // referência do delta ao arrastar um grupo.
+    const commitPosRef = useRef<Point3D>(
+        initialPosition ?? { x: 0, y: 0, z: 0 },
+    );
+
     // Callback chamado ao finalizar o arraste
     const handleMoveEnd = useCallback((nextPosition: Point3D) => {
+        commitPosRef.current = nextPosition;
         setPosition(nextPosition);
         onMove?.(nextPosition);
     }, [onMove]);
+
+    // Estado do arraste de grupo (só no nó que o mouse arrasta):
+    // captura a posição inicial de cada membro e emite externalMove
+    // para que cada um se reposicione mantendo a distância relativa.
+    const grupoRef = useRef<{
+        membros: string[];
+        inicios: Map<string, Point3D>;
+        inicioProprio: Point3D;
+        acumulado: { x: number; y: number };
+    } | null>(null);
+
+    const aoDelta = useCallback((
+        dx: number,
+        dy: number,
+        phase: "start" | "live" | "commit",
+    ) => {
+        if (!getMoveGroup) return;
+
+        if (phase === "start") {
+            const membros = getMoveGroup(id).filter((m) => m !== id);
+            if (membros.length === 0) {
+                grupoRef.current = null;
+                return;
+            }
+            const inicios = new Map<string, Point3D>();
+            for (const m of membros) {
+                const st = registry.getNodeState(m);
+                if (st) inicios.set(m, { ...st.position });
+            }
+            const meu = registry.getNodeState(id);
+            grupoRef.current = {
+                membros,
+                inicios,
+                inicioProprio: meu
+                    ? { ...meu.position }
+                    : { ...commitPosRef.current },
+                acumulado: { x: 0, y: 0 },
+            };
+            return;
+        }
+
+        const g = grupoRef.current;
+        if (!g) return;
+
+        if (phase === "live") {
+            g.acumulado.x += dx;
+            g.acumulado.y += dy;
+            for (const m of g.membros) {
+                const ini = g.inicios.get(m);
+                if (!ini) continue;
+                eventBus.emit(m, "externalMove", {
+                    position: {
+                        x: ini.x + g.acumulado.x,
+                        y: ini.y + g.acumulado.y,
+                        z: ini.z,
+                    },
+                    phase: "live",
+                });
+            }
+            return;
+        }
+
+        // commit: usa a posição final (com snap) do nó arrastado.
+        const fim = commitPosRef.current;
+        const totalX = fim.x - g.inicioProprio.x;
+        const totalY = fim.y - g.inicioProprio.y;
+        for (const m of g.membros) {
+            const ini = g.inicios.get(m);
+            if (!ini) continue;
+            eventBus.emit(m, "externalMove", {
+                position: {
+                    x: ini.x + totalX,
+                    y: ini.y + totalY,
+                    z: ini.z,
+                },
+                phase: "commit",
+            });
+        }
+        grupoRef.current = null;
+    }, [getMoveGroup, id, registry, eventBus]);
 
     const { handleMouseDown, handleMouseUp, moveRef } = useMoveBehaviour({
         elementRef: ref,
@@ -79,10 +166,29 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
         onMoving: (nextPosition) => reportState(nextPosition, "live"),
         eventEmitter,
         snapGrid,
-        onDelta: onMoveDelta
-            ? (dx, dy, phase) => onMoveDelta(id, dx, dy, phase)
-            : undefined,
+        onDelta: getMoveGroup ? aoDelta : undefined,
     });
+
+    // Recebe pedidos de movimento externo (arraste de grupo): move
+    // a si mesmo atualizando o registry e emitindo "move" para que
+    // os paths conectados acompanhem.
+    useEffect(() => {
+        const aoMoverExterno = (ev: GraphExternalMoveEvent) => {
+            if (!ref.current) return;
+            if (ev.phase === "commit") {
+                commitPosRef.current = ev.position;
+                setPosition(ev.position);
+            } else {
+                ref.current.style.left = `${ev.position.x.toFixed(0)}px`;
+                ref.current.style.top = `${ev.position.y.toFixed(0)}px`;
+                reportState(ev.position, "live");
+            }
+        };
+        eventBus.subscribe(id, "externalMove", aoMoverExterno);
+        return () => {
+            eventBus.unsubscribe(id, "externalMove", aoMoverExterno);
+        };
+    }, [id, eventBus, reportState]);
 
     useEffect(() => {
         if (!ref.current) return;
