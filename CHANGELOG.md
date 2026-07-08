@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.2.0...react-html-graph-v2.2.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* **graph:** keep links attached to nodes during group drag ([db98d34](https://github.com/jraylan/react-html-graph/commit/db98d3434ebe9be8eda9590e5af231d50ce83972))
+
 ## [2.2.0](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.1.1...react-html-graph-v2.2.0) (2026-07-08)
 
 
