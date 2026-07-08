@@ -25,6 +25,16 @@ export interface UseMoveBehaviourOptions {
     onMoving?: (currentPosition: Point3D) => void;
     /** Emitter de eventos do nó. */
     eventEmitter?: NodeEventEmitter | null;
+    /**
+     * Reporta o delta incremental do arraste (unidades de mundo).
+     * Fase start no mousedown, live a cada mousemove, commit no
+     * mouseup. Usado pelo Graph para arrastar um grupo junto.
+     */
+    onDelta?: (
+        dx: number,
+        dy: number,
+        phase: "start" | "live" | "commit",
+    ) => void;
 }
 
 /** Retorno do hook useMoveBehaviour. */
@@ -51,6 +61,7 @@ export function useMoveBehaviour({
     onMoving,
     eventEmitter,
     snapGrid,
+    onDelta,
 }: UseMoveBehaviourOptions): UseMoveBehaviourReturn {
     const moveRef = useRef<MoveState>({
         moving: false,
@@ -65,7 +76,8 @@ export function useMoveBehaviour({
         moveRef.current.lastPointer.x = e.clientX;
         moveRef.current.lastPointer.y = e.clientY;
         moveRef.current.currentPos = { x: position.x, y: position.y };
-    }, [position.x, position.y, mode]);
+        onDelta?.(0, 0, "start");
+    }, [position.x, position.y, mode, onDelta]);
 
     const handleMouseUp = useCallback((e: MouseEvent | React.MouseEvent) => {
         if (e.button === 0 && moveRef.current.moving) {
@@ -84,9 +96,13 @@ export function useMoveBehaviour({
                 y: nextPosition.y,
             };
             onMoveEnd?.(nextPosition);
+            // Commit do grupo depois de fixar a posição própria no
+            // nodeStateRef (via onMoveEnd), para o Graph ler o delta
+            // final ja com snap aplicado.
+            onDelta?.(0, 0, "commit");
             eventEmitter?.("move", { position: nextPosition, phase: "commit" });
         }
-    }, [position.z, onMoveEnd, eventEmitter, snapGrid]);
+    }, [position.z, onMoveEnd, eventEmitter, snapGrid, onDelta]);
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!elementRef.current || !moveRef.current.moving) return;
@@ -107,8 +123,9 @@ export function useMoveBehaviour({
         elementRef.current.style.left = `${newX.toFixed(0)}px`;
         elementRef.current.style.top = `${newY.toFixed(0)}px`;
         onMoving?.(nextPosition);
+        onDelta?.(dx, dy, "live");
         eventEmitter?.("move", { position: nextPosition, phase: "live" });
-    }, [position.z, getZoom, elementRef, onMoving, eventEmitter]);
+    }, [position.z, getZoom, elementRef, onMoving, eventEmitter, onDelta]);
 
     // Registra listeners globais de mousemove e mouseup
     useEffect(() => {

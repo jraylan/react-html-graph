@@ -208,6 +208,12 @@ export type GraphProps = {
      * posição dos nós ao soltar. 0/undefined desativa.
      */
     snapGrid?: number;
+    /**
+     * Dado o nó que iniciou o arraste, retorna os ids do grupo que
+     * deve se mover junto (mantendo a distancia relativa). Inclua o
+     * próprio nó. Grupo com um único membro = arraste normal.
+     */
+    getMoveGroup?: (nodeId: string) => string[];
 }
 
 /** Entrada pública para aplicar um layout aos nós existentes do grafo. */
@@ -456,6 +462,16 @@ export interface GraphObjectProps<T extends object = any> {
     snapGrid?: number;
     /** Callback chamado quando o nó reporta seu estado runtime atual. */
     onStateChange?: (state: GraphNodeRuntimeState<T>) => void;
+    /**
+     * Reporta o delta incremental do arraste (unidades de mundo)
+     * para o Graph mover o grupo. Fases: start, live, commit.
+     */
+    onMoveDelta?: (
+        id: string,
+        dx: number,
+        dy: number,
+        phase: "start" | "live" | "commit",
+    ) => void;
     /** Função que renderiza o conteúdo do nó com as portas. */
     children(props: NodeObjectTemplateProps<T>): React.ReactNode;
 }

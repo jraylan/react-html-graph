@@ -26,6 +26,7 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     onMove,
     onStateChange,
     snapGrid,
+    onMoveDelta,
 }: GraphObjectProps<T>) {
     const ref = useRef<HTMLDivElement>(null);
     const root = useGraphRoot();
@@ -78,6 +79,9 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
         onMoving: (nextPosition) => reportState(nextPosition, "live"),
         eventEmitter,
         snapGrid,
+        onDelta: onMoveDelta
+            ? (dx, dy, phase) => onMoveDelta(id, dx, dy, phase)
+            : undefined,
     });
 
     useEffect(() => {
