@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.2.1...react-html-graph-v2.3.0) (2026-07-09)
+
+
+### Features
+
+* **graph:** per-node ports via NodeDefinition.ports and setNodePorts ([e70d624](https://github.com/jraylan/react-html-graph/commit/e70d624a335150e0758e8eb27c2678c7ebc03e1a))
+
 ## [2.2.1](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.2.0...react-html-graph-v2.2.1) (2026-07-08)
 
 
