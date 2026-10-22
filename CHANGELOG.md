@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.3.1](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.3.0...react-html-graph-v2.3.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **graph:** only start a node drag past a movement threshold ([b45478a](https://github.com/jraylan/react-html-graph/commit/b45478a1141ebaa1546ff2f69b9cb0b75d37a089))
+* **graph:** only start a node drag past a movement threshold ([fec0ed5](https://github.com/jraylan/react-html-graph/commit/fec0ed570b674279149d6687e0bc935200ffdf42))
+
 ## [2.3.0](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.2.1...react-html-graph-v2.3.0) (2026-07-09)
 
 
