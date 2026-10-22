@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.2](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.3.1...react-html-graph-v2.3.2) (2026-10-22)
+
+
+### Miscellaneous Chores
+
+* release 2.3.2 ([0a49401](https://github.com/jraylan/react-html-graph/commit/0a4940111bcd7a0619ccb6684aaf852c2194ab98))
+
 ## [2.3.1](https://github.com/jraylan/react-html-graph/compare/react-html-graph-v2.3.0...react-html-graph-v2.3.1) (2026-10-22)
 
 
