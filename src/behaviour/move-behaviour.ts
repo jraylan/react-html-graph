@@ -2,10 +2,20 @@ import { useCallback, useEffect, useRef } from "react";
 import { GraphMode, NodeEventEmitter, Point3D } from "../types";
 
 type MoveState = {
+    /** Button pressed over the node: the drag is armed. */
     moving: boolean;
+    /** The pointer went past the threshold: the node is actually moving. */
+    started: boolean;
+    startPointer: { x: number; y: number };
     lastPointer: { x: number; y: number };
     currentPos: { x: number; y: number };
 };
+
+/**
+ * Default distance, in screen pixels, the pointer must travel with the
+ * button pressed before a click turns into a drag.
+ */
+export const DEFAULT_DRAG_THRESHOLD = 4;
 
 /** Opções para o hook useMoveBehaviour. */
 export interface UseMoveBehaviourOptions {
@@ -35,6 +45,12 @@ export interface UseMoveBehaviourOptions {
         dy: number,
         phase: "start" | "live" | "commit",
     ) => void;
+    /**
+     * Screen pixels the pointer travels before the node starts moving.
+     * Below that it is a click: the node stays put and is not snapped
+     * to ``snapGrid``. 0 moves from the first pixel.
+     */
+    dragThreshold?: number;
 }
 
 /** Retorno do hook useMoveBehaviour. */
@@ -62,26 +78,37 @@ export function useMoveBehaviour({
     eventEmitter,
     snapGrid,
     onDelta,
+    dragThreshold = DEFAULT_DRAG_THRESHOLD,
 }: UseMoveBehaviourOptions): UseMoveBehaviourReturn {
     const moveRef = useRef<MoveState>({
         moving: false,
+        started: false,
+        startPointer: { x: 0, y: 0 },
         lastPointer: { x: 0, y: 0 },
         currentPos: { x: 0, y: 0 },
     });
 
+    // Mousedown only arms the drag; it starts on the mousemove that goes
+    // past the threshold, so the jitter of a selection click does not
+    // move the node.
     const handleMouseDown = useCallback((e: React.MouseEvent<HTMLElement>) => {
         if (e.button !== 0 || mode === "readonly") return;
         e.preventDefault();
         moveRef.current.moving = true;
+        moveRef.current.started = false;
+        moveRef.current.startPointer = { x: e.clientX, y: e.clientY };
         moveRef.current.lastPointer.x = e.clientX;
         moveRef.current.lastPointer.y = e.clientY;
         moveRef.current.currentPos = { x: position.x, y: position.y };
-        onDelta?.(0, 0, "start");
-    }, [position.x, position.y, mode, onDelta]);
+    }, [position.x, position.y, mode]);
 
     const handleMouseUp = useCallback((e: MouseEvent | React.MouseEvent) => {
         if (e.button === 0 && moveRef.current.moving) {
             moveRef.current.moving = false;
+            // Never went past the threshold: it was a click, nothing to
+            // commit.
+            if (!moveRef.current.started) return;
+            moveRef.current.started = false;
             const snap = (v: number) =>
                 snapGrid && snapGrid > 0
                     ? Math.round(v / snapGrid) * snapGrid
@@ -106,6 +133,17 @@ export function useMoveBehaviour({
 
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!elementRef.current || !moveRef.current.moving) return;
+        if (!moveRef.current.started) {
+            const travelled = Math.hypot(
+                e.clientX - moveRef.current.startPointer.x,
+                e.clientY - moveRef.current.startPointer.y,
+            );
+            if (travelled < dragThreshold) return;
+            // Past the threshold: the delta counts from the mousedown, so
+            // the node catches up with the pointer without jumping.
+            moveRef.current.started = true;
+            onDelta?.(0, 0, "start");
+        }
         const zoom = getZoom();
         const dx = (e.clientX - moveRef.current.lastPointer.x) / zoom;
         const dy = (e.clientY - moveRef.current.lastPointer.y) / zoom;
@@ -125,7 +163,15 @@ export function useMoveBehaviour({
         onMoving?.(nextPosition);
         onDelta?.(dx, dy, "live");
         eventEmitter?.("move", { position: nextPosition, phase: "live" });
-    }, [position.z, getZoom, elementRef, onMoving, eventEmitter, onDelta]);
+    }, [
+        position.z,
+        getZoom,
+        elementRef,
+        onMoving,
+        eventEmitter,
+        onDelta,
+        dragThreshold,
+    ]);
 
     // Registra listeners globais de mousemove e mouseup
     useEffect(() => {

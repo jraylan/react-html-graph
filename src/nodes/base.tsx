@@ -244,15 +244,19 @@ const MemoizedGraphObject = memo(function GraphObject<T extends object = any>({
     useEffect(() => {
         if (!ref.current || !onStateChange) return;
         const observer = new ResizeObserver(() => {
+            // An armed drag (a click still below the threshold) does not
+            // move the node: only a started drag reports a live position.
+            const dragging =
+                moveRef.current.moving && moveRef.current.started;
             reportState(
-                moveRef.current.moving
+                dragging
                     ? {
                         x: moveRef.current.currentPos.x,
                         y: moveRef.current.currentPos.y,
                         z: position.z,
                     }
                     : position,
-                moveRef.current.moving ? "live" : "commit",
+                dragging ? "live" : "commit",
             );
         });
         observer.observe(ref.current);
